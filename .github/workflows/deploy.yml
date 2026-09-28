@@ -1,0 +1,51 @@
+name: Deploy production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # A queued run publishes main's current tip, including superseded queued pushes.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Check Infisical configuration
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_MACHINE_IDENTITY_CLIENT_SECRET }}
+          PROJECT_SLUG: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          ENV_SLUG: ${{ vars.INFISICAL_ENV_SLUG }}
+        run: |
+          for name in CLIENT_ID CLIENT_SECRET PROJECT_SLUG ENV_SLUG; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing Infisical GitHub configuration: $name"
+              exit 1
+            fi
+          done
+      - name: Fetch production infrastructure secrets
+        uses: Infisical/secrets-action@v1.0.9
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_MACHINE_IDENTITY_CLIENT_SECRET }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          export-type: env
+      - name: Sync runtime configuration, migrate, deploy, and verify
+        run: npm run deploy:ci

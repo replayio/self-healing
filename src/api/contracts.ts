@@ -49,9 +49,7 @@ export const configurations = {
     subtext_project_id: Ref.optional(),
     replay_project_id: Ref.optional(),
     fullstory_org_id: Ref.optional(),
-    // References only. Provider credentials belong in the operator's secret manager.
-    subtext_credential_ref: Ref.optional(),
-    replay_credential_ref: Ref.optional(),
+    // Desired links only; ownership must be established through Subtext.
   }).strict(),
   context: object({
     documents: z
