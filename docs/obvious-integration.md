@@ -56,7 +56,7 @@ This initial path is **push ingestion**: the app/proxy reports session URLs. Mer
 
 - `GET /api/v1/connection/reviews?reviewer=friction-and-recovery&page=0` (also `goals-and-outcomes`) returns QA's review results and task state.
 - A daily summarizer is enabled at connection setup, using QA's existing default report prompt, UTC timezone, and 08:00 schedule. QA's scheduler executes it over the previous day's data.
-- `POST /api/v1/connection/reports` with `{"day":"YYYY-MM-DD"}` requests yesterday's report after 08:00 UTC, with automatic scheduling semantics: an existing report is not replaced on retry.
+- `POST /api/v1/connection/reports` with `{"day":"YYYY-MM-DD"}` requests yesterday's report after 08:00 UTC, with automatic scheduling semantics: an existing report is not replaced on retry; `not_eligible` means no daily report was queued yet.
 - `GET /api/v1/connection/reports?day=YYYY-MM-DD` reads a specific day, including processing status and evidence; omit `day` for the latest report and day-navigation metadata.
 
 These result endpoints expose QA's native response envelopes. Email/Slack delivery, cross-day analytics, key rotation, retrospective discovery, and fix-PR orchestration are not implemented by this slice.
@@ -67,6 +67,6 @@ Merge/deploy the companion QA bridge and this service together. Add `SELF_HEALIN
 
 QA's `SELF_HEALING_URL` defaults to `https://self-healing.replay.io`; set it to the Self Healing Netlify origin until custom DNS/TLS is ready. The QA deployment allows this variable through its existing Infisical sync. Its workers no longer fall back to global `SUBTEXT_API_KEY`/`SUBTEXT_ENDPOINT`. Existing QA user-session projects without a Self Healing source will stop processing sessions; provision/migrate those connections before rolling this change into an environment that uses them. Existing-project adoption is not implemented by this slice.
 
-QA's bridge is `POST /.netlify/functions/self-healing`, authenticated with its existing private QA API token. The source gateway is `POST /api/internal/connections/{connection_id}/subtext`, authenticated by a connection-scoped capability. It forwards only MCP initialization, tool listing, and the four read-oriented review tools used by QA, to the fixed Subtext endpoint. Redirects are disabled. Neither endpoint logs request bodies or upstream errors.
+QA's bridge is `POST /.netlify/functions/self-healing`, authenticated with its existing private QA API token. The source gateway is `POST /api/internal/connections/{connection_id}/subtext`, authenticated by a connection-scoped capability. It forwards only MCP initialization, tool listing, and the four read-oriented review tools used by QA, to the fixed Subtext endpoint. Redirects are disabled. Self Healing does not log customer keys or upstream errors. QA uses its standard backend request recorder; no customer Subtext key reaches that recorder.
 
 Acceptance before enabling customer traffic: connect a real key twice and see one QA project; upload a real session with redacted network events; complete it and obtain a real review; obtain a report for a completed day. Verify QA's worker endpoint points to Self Healing and no provider credential reaches QA. Automated tests use mocked providers and do not establish live Subtext compatibility or account billing readiness.
