@@ -133,6 +133,7 @@ test("only explicit connection runtime settings are synced, never Infisical or c
     SELF_HEALING_SECRET: "encrypted-root",
     REPLAY_QA_API_TOKEN: "qa-token",
     REPLAY_QA_URL: "https://qa.replay.io",
+    SELF_HEALING_URL: "https://replay-self-healing.netlify.app",
     INFISICAL_MACHINE_IDENTITY_CLIENT_SECRET: "do-not-export",
     SUBTEXT_API_KEY: "customer-key",
   });
@@ -155,5 +156,6 @@ test("only explicit connection runtime settings are synced, never Infisical or c
     "REPLAY_QA_API_TOKEN",
     "REPLAY_QA_URL",
     "SELF_HEALING_SECRET",
+    "SELF_HEALING_URL",
   ]);
 });

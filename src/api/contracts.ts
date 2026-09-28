@@ -299,8 +299,10 @@ const connectionOperations: Operation[] = [
     id: "connectionReport",
     method: "POST",
     path: connectionPath + "/reports",
-    summary: "Queue an idempotent daily behavior report",
+    summary: "Read or await the scheduled daily behavior report",
     implemented: true,
+    description:
+      "QA generates daily reports at 08:00 UTC. This operation reads the scheduled report without rerunning or replacing existing work. Request yesterday after 08:00 UTC.",
     body: object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
     response: z.object({ status: z.string() }).passthrough(),
   },

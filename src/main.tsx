@@ -193,7 +193,7 @@ function App() {
             </pre>
           </div>
           <p className="contract-note">
-            The connection API requires the QA bridge and server credentials to
+            The connection API requires QA callback support and server credentials to
             be configured. Session reviews and daily reports run in QA; all
             Subtext access goes through Self Healing. The broader fix,
             event-stream, and notification APIs remain planned and return{" "}

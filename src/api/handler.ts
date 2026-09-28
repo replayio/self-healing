@@ -1,5 +1,4 @@
 import { getConnectionService } from "./connections.ts";
-import { gatewayRequest } from "./gateway.ts";
 import { randomUUID } from "node:crypto";
 import { HttpError } from "./errors.ts";
 import { authenticateSubtext, type Authenticator } from "./subtext.ts";
@@ -88,25 +87,18 @@ export function createHandler(
         return json(getOpenApiSpec());
       }
       const gateway =
-        /^\/api\/internal\/connections\/([a-f0-9-]{36})\/subtext$/.exec(path);
+        /^\/api\/internal\/sessions\/([a-f0-9-]{36})\/subtext\/([a-f0-9]{64})$/.exec(
+          path,
+        );
       if (gateway) {
         if (request.method !== "POST")
           throw new HttpError(405, "method_not_allowed", "Use POST.");
-        const id = Id.parse(gateway[1]);
-        const token =
-          /^(?:Bearer|Basic) ([^\s]+)$/i.exec(
-            request.headers.get("authorization") ?? "",
-          )?.[1] ?? "";
-        if (!token)
-          throw new HttpError(
-            401,
-            "unauthorized",
-            "A gateway credential is required.",
-          );
-        const key = await (
-          dependencies.connections ?? getConnectionService
-        )().gateway(id, token);
-        return gatewayRequest(request, key, await readBody(request));
+        return (dependencies.connections ?? getConnectionService)().callback(
+          Id.parse(gateway[1]),
+          gateway[2]!,
+          request,
+          await readBody(request),
+        );
       }
       const matches = operations.flatMap((operation) => {
         const match = new RegExp(
@@ -167,7 +159,7 @@ export function createHandler(
           return json({
             id: row.id,
             qa_project_id: row.qa_project_id,
-            status: row.qa_project_id ? "connected" : "pending",
+            status: row.ready ? "connected" : "pending",
           });
         }
         const action = {
