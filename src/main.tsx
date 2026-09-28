@@ -6,7 +6,7 @@ const apiGroups = [
   [
     "Project configuration",
     "Projects, provider links, context, sightmaps, environments, and report preferences.",
-    "Identity lookup pending",
+    "Key-scoped configuration",
   ],
   [
     "User understanding",
@@ -75,8 +75,8 @@ function App() {
             </a>
           </div>
           <p className="preview-note">
-            Explore the API contracts and setup workflow. Protected operations
-            await Subtext account lookup.
+            Connect a Subtext key to a QA project, send captured sessions, and
+            retrieve reviews and daily behavior reports.
           </p>
         </section>
         <section className="flow" aria-label="How self healing works">
@@ -142,18 +142,18 @@ function App() {
             <li>
               <h3>Register the project and its context</h3>
               <p>
-                Once Subtext account lookup is available, use the API to save
-                your repository, deployment URLs, product context, repository
+                Use the connection API to create your QA project, then save your
+                repository, deployment URLs, product context, repository
                 sightmap, QA preferences, and report destinations.
               </p>
             </li>
             <li>
               <h3>Enable monitoring and the fix loop</h3>
               <p>
-                Once provider adapters are available, follow the returned
-                Fullstory installation instructions, consume new bugs, submit
-                fix PRs, and watch verification results. Choose email or Slack
-                for reports.
+                Send sessions and auxiliary events through your server to Self
+                Healing. Complete each session to request QA reviews, then
+                retrieve the results and daily reports. The automated fix-PR
+                loop is still planned.
               </p>
             </li>
           </ol>
@@ -179,7 +179,7 @@ function App() {
           </div>
           <div className="code-panel">
             <div>
-              <h3>Start with a project</h3>
+              <h3>Connect your key</h3>
               <p>
                 Use your deployed service URL and your Subtext API key. Discover
                 request and response schemas in OpenAPI.
@@ -189,17 +189,15 @@ function App() {
               </a>
             </div>
             <pre>
-              <code>{`curl "$SELF_HEALING_URL/api/v1/projects" \\\n  -H "Authorization: Bearer $SUBTEXT_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "name": "My app",\n    "repository_url": "https://github.com/team/app",\n    "production_url": "https://app.example.com"\n  }'`}</code>
+              <code>{`curl "$SELF_HEALING_URL/api/v1/connection" \\\n  -H "Authorization: Bearer $SUBTEXT_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "name": "My app",\n    "production_url": "https://app.example.com"\n  }'`}</code>
             </pre>
           </div>
           <p className="contract-note">
-            Subtext key verification is supported. Account/project lookup is
-            pending, so protected endpoints return 503 until that adapter is
-            implemented. Contract-only provider operations will return{" "}
-            <code>501 not_implemented</code>. Saving configuration does not
-            start monitoring, schedule reports, or queue QA. Recordings remain
-            with their providers; this foundation stores project metadata and
-            configuration.
+            The connection API requires the QA bridge and server credentials to
+            be configured. Session reviews and daily reports run in QA; all
+            Subtext access goes through Self Healing. The broader fix,
+            event-stream, and notification APIs remain planned and return{" "}
+            <code>501 not_implemented</code>.
           </p>
         </section>
       </main>

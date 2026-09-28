@@ -125,3 +125,35 @@ test("Netlify errors do not expose raw provider response bodies or secrets", asy
       error.message === "Netlify GET request returned HTTP 403",
   );
 });
+
+test("only explicit connection runtime settings are synced, never Infisical or customer credentials", async () => {
+  const keys: string[] = [];
+  const config = deploymentConfig({
+    ...env,
+    SELF_HEALING_SECRET: "encrypted-root",
+    REPLAY_QA_API_TOKEN: "qa-token",
+    REPLAY_QA_URL: "https://qa.replay.io",
+    INFISICAL_MACHINE_IDENTITY_CLIENT_SECRET: "do-not-export",
+    SUBTEXT_API_KEY: "customer-key",
+  });
+  await syncRuntimeSecrets(config, async (url, init) => {
+    if (String(url).includes("/sites/"))
+      return Response.json({
+        account_slug: "replay",
+        custom_domain: target.domain,
+      });
+    if (init?.method === "GET") return Response.json([]);
+    for (const item of JSON.parse(String(init?.body))) {
+      keys.push(item.key);
+      assert.deepEqual(item.scopes, ["functions"]);
+      assert.equal(item.values[0].context, "production");
+    }
+    return new Response(null, { status: 204 });
+  });
+  assert.deepEqual(keys.sort(), [
+    "DATABASE_URL",
+    "REPLAY_QA_API_TOKEN",
+    "REPLAY_QA_URL",
+    "SELF_HEALING_SECRET",
+  ]);
+});

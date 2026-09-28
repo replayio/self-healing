@@ -1,24 +1,14 @@
 ---
 name: setup-self-healing
-description: Configure a repository for the Self Healing API, including provider links, project context, sightmap, QA environments, and report preferences.
+description: Connect a Subtext key to Self Healing and configure session ingestion through a server-side proxy.
 ---
 
-# Set up Self Healing
+Use the user's Subtext key as `Authorization: Bearer <key>`. Never put it in browser code or forward it to QA. No extra customer-facing Self Healing key is needed.
 
-Use the user's configured `SELF_HEALING_URL` and server-side `SUBTEXT_API_KEY`. Read `GET /api/v1/openapi.json` at that origin before writing configuration. All nonpublic requests use `Authorization: Bearer <key>`. Do not put this key in a browser, a recording snippet, a URL, or a checked-in file.
+1. POST `/api/v1/connection` with `name` and `production_url`. Retry identical requests after transport failures; one key creates one QA project. GET the same path for status. A different key creates a different connection; rotation preserving identity is not yet supported.
+2. Install Fullstory capture in the application. Configure a same-origin authenticated server proxy holding the Subtext key. Adapt QA's capture producers (`src/guidance/user-session/setup.md`) to upload to Self Healing's `/api/v1/connection/sessions` through this proxy, never directly to QA. Mask credentials/private input before transmission. Supplying a key does not install capture or discover historical sessions.
+3. Upload `session_url`, `auxiliary_data`, and `complete:false`. Each version-1 artifact has `namespace`, `key`, `schema_version`, and `payload`. Supported pairs: `network/captured-exchanges`, `interaction/captured-interactions`, `session/metrics`, `session/identity`, `session/capture-context`. Match QA's versioned payload schemas. Use stable event IDs, absolute capture timestamps, and batches below 256 KiB. Wait for each batch to succeed; retry identical bodies on transient failures.
+4. After all uploads finish, durably send `session_url`, `auxiliary_data:[]`, `complete:true` from the server. This seals the session and requests goals/outcomes and friction/recovery reviews. A 200 acknowledges handoff, not successful analysis. New data for sealed sessions is rejected.
+5. Poll `/api/v1/connection/reviews` and `/api/v1/connection/reports`. Daily reporting uses UTC at 08:00 over the previous day's data. Provider work depends on QA billing capacity and can fail. Email/Slack delivery and automatic fix PRs remain unimplemented.
 
-This deployment is initially a scaffold. OpenAPI marks each operation `implemented` or `planned` with `x-implementation-status`. Planned endpoints return `501 not_implemented`. Do not retry a 501 or tell the user that monitoring/QA/reports are active merely because configuration was saved.
-
-1. Establish the target repository, deployed app URL, and factory's GitHub access. The factory writes PRs; the service coordinates evidence and verification.
-2. Use the user's Subtext account and key directly. Do not request, generate, or configure a separate Self Healing key. The service validates this key with Subtext and must resolve account/project identity there. Currently identity lookup is pending: a verified key returns `503 subtext_identity_unavailable`; stop setup data writes and report that specific missing adapter. Do not rotate a valid key to work around it. Ask for missing repository/deployment or report-destination information only when needed.
-3. List existing projects before creating one. Register with `POST /api/v1/projects` using `name`, `repository_url`, `production_url`, and optional `default_branch`. Retain the returned project ID. After an ambiguous POST failure, reconcile against the project list before retrying.
-4. Read then replace the appropriate project resources with `PUT /api/v1/projects/{project_id}/{resource}`. PUT replaces the whole resource; preserve existing values the user did not ask to change:
-   - `integrations`: Subtext/Replay project IDs, Fullstory organization, resolved through the authenticated Subtext account. Never store provider secrets as context or configuration values.
-   - `context`: product requirements and document links/content relevant to interpreting behavior.
-   - `sightmap`: current repository commit SHA and file-purpose/route mappings.
-   - `environments`: production/prerelease URLs, QA cadence, and PR-testing preferences.
-   - `report-settings`: daily/weekly cadence, UTC hour/weekday, and the user's chosen email addresses or Slack channel/credential references.
-5. Read back saved resources. Configuration persistence requires the Subtext identity adapter. Provider provisioning and scheduled work are not.
-6. When OpenAPI advertises a working monitoring adapter, call the monitoring setup endpoint and follow its returned installation guide. Respect token-rotation semantics: never repeat setup automatically after an ambiguous result. Install only the returned browser-safe credentials, then check project readiness.
-
-Report precisely which configuration is saved and which provider capabilities remain unavailable. For the ongoing loop, read `/api/v1/skills/operate-self-healing/SKILL.md` from the same origin.
+The service must have its QA bridge and infrastructure secrets configured first. Read `/api/v1/openapi.json` for endpoints, and `docs/obvious-integration.md` in the repository for payload examples, deployment requirements, and migration limitations. Broader `/projects/*` provider contracts remain 501s: do not report monitoring, PR verification, or delivery as working merely because configuration was saved.
