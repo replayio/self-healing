@@ -36,7 +36,9 @@ export async function gatewayRequest(
   }
   if (!response.ok)
     throw new HttpError(
-      response.status === 401 || response.status === 403 ? 401 : 503,
+      [400, 401, 403, 404, 429].includes(response.status)
+        ? response.status
+        : 503,
       "subtext_unavailable",
       "Subtext rejected the gateway request.",
     );

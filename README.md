@@ -36,19 +36,19 @@ Set `SELF_HEALING_URL` to your deployed origin and `SUBTEXT_API_KEY` to your Sub
 - `GET /api/v1/health` — liveness only, not database or provider readiness.
 
 ```sh
-curl --fail-with-body "$SELF_HEALING_URL/api/v1/projects" \
+curl --fail-with-body "$SELF_HEALING_URL/api/v1/connection" \
   -H "Authorization: Bearer $SUBTEXT_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"My app","repository_url":"https://github.com/team/app","production_url":"https://app.example.com"}'
+  -d '{"name":"My app","production_url":"https://app.example.com"}'
 ```
 
-Once identity resolution is implemented, use the returned `id` in `/api/v1/projects/{project_id}`. `PUT` on `/integrations`, `/context`, `/sightmap`, `/environments`, or `/report-settings` replaces the entire configuration resource. Saving preferences does not activate integrations or scheduled jobs. All JSON write bodies reject unknown properties and are limited to 256 KiB.
+Use the same key for `/api/v1/connection/sessions`, `/reviews`, and `/reports`. See [the integration guide](docs/obvious-integration.md) for batching, completion, retries and report timing. All JSON write bodies are limited to 256 KiB.
 
-Project lists use `limit` (1–100, default 25) and an exclusive UUID `cursor`; pass `next_cursor` into the next request. Ordering is by immutable project UUID, not creation time; concurrent new projects may appear before a saved cursor, so restart the listing when refreshing the inventory. The planned append-only events interface is the mechanism for reliable ongoing monitoring. POST requests have no idempotency guarantee yet: after an ambiguous timeout, reconcile before retrying. PUT configuration replacement is safe to retry.
+The separate `/api/v1/projects` API stores local configuration. Its configuration PUTs replace the full document and do not activate provider work. Its project creation POST remains non-idempotent; use the connection API above to provision QA.
 
 ## Production deployment
 
-GitHub Actions owns production deploys on merges to `main` and manual runs on `main`. Netlify automatic Git builds are skipped by `netlify.toml`. PRs run checks only; they cannot deploy or fetch production secrets. The workflow checks out main's current tip, runs tests/build before fetching secrets, synchronizes the database secret, migrates, deploys with `--no-build --prod`, and smoke-tests the immutable deployment URL (which works before custom DNS/TLS is ready).
+GitHub Actions owns production deploys on merges to `main` and manual runs on `main`. Netlify automatic Git builds are skipped by `netlify.toml`. PRs run checks only; they cannot deploy or fetch production secrets. The workflow checks out main's current tip, runs tests/build before fetching secrets, synchronizes the explicit runtime configuration, migrates, deploys with `--no-build --prod`, and smoke-tests the immutable deployment URL (which works before custom DNS/TLS is ready).
 
 Provisioned resources:
 

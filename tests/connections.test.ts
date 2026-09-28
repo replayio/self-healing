@@ -205,3 +205,16 @@ test("QA transport sends only infrastructure credentials and sanitizes provider 
     (error) => !String(error).includes("sensitive failure"),
   );
 });
+
+test("expired MCP sessions retain HTTP 404 so QA can reconnect", async () => {
+  await assert.rejects(
+    gatewayRequest(
+      new Request("https://self-healing.test"),
+      "key",
+      { jsonrpc: "2.0", method: "tools/list", id: 1 },
+      async () => new Response(null, { status: 404 }),
+    ),
+    (error: unknown) =>
+      error instanceof Error && "status" in error && error.status === 404,
+  );
+});

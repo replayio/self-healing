@@ -67,7 +67,7 @@ export function connectionService(
           qa_project_id: connection.qa_project_id,
           status: "connected" as const,
         };
-      const result = z.object({ project_id: z.string().min(1) }).parse(
+      const result = z.object({ project_id: z.string().min(1) }).safeParse(
         await qa({
           action: "connect",
           connection_id: connection.id,
@@ -76,13 +76,19 @@ export function connectionService(
           gateway_token: vault.gateway(connection.id),
         }),
       );
+      if (!result.success)
+        throw new HttpError(
+          503,
+          "qa_unavailable",
+          "QA returned an invalid project response.",
+        );
       await query("UPDATE connections SET qa_project_id = $2 WHERE id = $1", [
         connection.id,
-        result.project_id,
+        result.data.project_id,
       ]);
       return {
         id: connection.id,
-        qa_project_id: result.project_id,
+        qa_project_id: result.data.project_id,
         status: "connected" as const,
       };
     },

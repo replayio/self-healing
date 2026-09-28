@@ -36,6 +36,7 @@ export function getOpenApiSpec() {
       410: "Expired event cursor",
       413: "Body exceeds 256 KiB",
       415: "Expected application/json",
+      429: "QA review capacity unavailable; retry with backoff",
       500: "Internal error",
       503: "Service not configured or database unavailable",
     }))
