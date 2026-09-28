@@ -16,7 +16,7 @@ See [architecture and adapter boundaries](docs/architecture.md) for the next imp
 
 ## Local development
 
-Use Node 22 and npm. No provider account or database is needed to view the landing page, inspect OpenAPI, or run tests.
+Use Node 22.13 or newer and npm. No provider account or database is needed to view the landing page, inspect OpenAPI, or run tests.
 
 ```sh
 npm ci
