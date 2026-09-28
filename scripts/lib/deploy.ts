@@ -35,9 +35,12 @@ export function deploymentConfig(env: NodeJS.ProcessEnv) {
     );
   }
   const runtime = Object.fromEntries(
-    ["SELF_HEALING_SECRET", "REPLAY_QA_API_TOKEN", "REPLAY_QA_URL"].flatMap(
-      (name) => (env[name] ? [[name, env[name]!]] : []),
-    ),
+    [
+      "SELF_HEALING_SECRET",
+      "REPLAY_QA_API_TOKEN",
+      "REPLAY_QA_URL",
+      "SELF_HEALING_URL",
+    ].flatMap((name) => (env[name] ? [[name, env[name]!]] : [])),
   );
   return { token, siteId, accountSlug, databaseUrl, runtime };
 }

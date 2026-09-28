@@ -6,7 +6,7 @@ This repository follows Loop QA's React/Vite frontend, TypeScript Netlify functi
 
 ## Current scope
 
-The connection API implements the first session-processing slice: one QA project per validated Subtext key, encrypted retained credentials, auxiliary upload forwarding, completion-triggered reviews, daily reports, and a scoped QA→Self Healing→Subtext gateway. It requires the companion QA bridge and runtime credentials; it has not been validated against a live customer Subtext account.
+The connection API implements the first session-processing slice: one QA project per validated Subtext key, encrypted retained credentials, auxiliary upload forwarding, completion-triggered reviews, daily reports, and a scoped QA→Self Healing→Subtext gateway. It uses QA’s existing APIs and session-source callbacks, and requires runtime credentials; it has not been validated against a live customer Subtext account.
 
 Start with [Obvious integration and rollout](docs/obvious-integration.md). The older `/projects/*` configuration API remains available, but its provider, fix-PR, event-stream and notification operations still return explicit `501 not_implemented`. This is not yet the complete self-healing PR factory.
 
@@ -65,7 +65,7 @@ Configure the Self Healing Infisical production environment with **only these re
 | `NETLIFY_SITE_ID`      | The provisioned site ID above               |
 | `DATABASE_URL`         | The provisioned Neon database connection    |
 
-Do not add a shared Subtext key or a Self Healing key map. Factories bring their own Subtext key. The deployment copies **only `DATABASE_URL`** into Netlify's production Functions scope; deploy credentials and Infisical credentials stay in CI. Any retired key-map variable on this dedicated site is removed. Changing an Infisical database secret takes effect on the next successful deployment. The target site and database hostname are checked before any mutation; resource moves require updating `scripts/lib/deploy.ts` as well as secrets.
+Do not add a shared Subtext key or a Self Healing key map. Factories bring their own Subtext key. The deployment copies `DATABASE_URL` and the explicit connection runtime settings (`SELF_HEALING_SECRET`, `REPLAY_QA_API_TOKEN`, optional `REPLAY_QA_URL` and `SELF_HEALING_URL`) into Netlify’s production Functions scope; deploy credentials and Infisical credentials stay in CI. Any retired key-map variable on this dedicated site is removed. Changing an Infisical database secret takes effect on the next successful deployment. The target site and database hostname are checked before any mutation; resource moves require updating `scripts/lib/deploy.ts` as well as secrets.
 
 GitHub repository configuration:
 
