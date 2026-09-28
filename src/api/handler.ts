@@ -1,4 +1,6 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { HttpError } from "./errors.ts";
+import { authenticateSubtext, type Authenticator } from "./subtext.ts";
 import { z } from "zod";
 import {
   configurations,
@@ -10,41 +12,6 @@ import {
 import { getOpenApiSpec } from "./openapi.ts";
 import { getStore, type Store } from "./store.ts";
 
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-const keyConfig = z
-  .record(z.string().min(32), z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/))
-  .refine((value) => Object.keys(value).length > 0);
-function authenticate(request: Request, rawKeys: string | undefined): string {
-  let keys: z.infer<typeof keyConfig>;
-  try {
-    keys = keyConfig.parse(JSON.parse(rawKeys ?? ""));
-  } catch {
-    throw new HttpError(
-      503,
-      "not_configured",
-      "API authentication is not configured.",
-    );
-  }
-  const match = /^Bearer ([^\s]+)$/i.exec(
-    request.headers.get("authorization") ?? "",
-  );
-  if (!match?.[1])
-    throw new HttpError(401, "unauthorized", "A valid bearer key is required.");
-  const digest = (value: string) => createHash("sha256").update(value).digest();
-  const supplied = digest(match[1]);
-  for (const [key, account] of Object.entries(keys)) {
-    if (timingSafeEqual(digest(key), supplied)) return account;
-  }
-  throw new HttpError(401, "unauthorized", "A valid bearer key is required.");
-}
 const MAX_BODY_BYTES = 256 * 1024;
 async function readBody(request: Request): Promise<unknown> {
   if (
@@ -93,7 +60,7 @@ async function readBody(request: Request): Promise<unknown> {
   }
 }
 export function createHandler(
-  dependencies: { store?: () => Store; keys?: () => string | undefined } = {},
+  dependencies: { store?: () => Store; authenticate?: Authenticator } = {},
 ) {
   return async (request: Request): Promise<Response> => {
     const requestId = randomUUID();
@@ -136,10 +103,9 @@ export function createHandler(
       const { operation, match } = route;
       if (operation.id === "health")
         return json({ status: "ok", version: "0.1.0", stage: "scaffold" });
-      const account = authenticate(
-        request,
-        (dependencies.keys ?? (() => process.env.SELF_HEALING_API_KEYS))(),
-      );
+      const { accountId: account } = await (
+        dependencies.authenticate ?? authenticateSubtext
+      )(request);
       for (const id of match.slice(1)) Id.parse(id);
       const query = operation.query?.parse(
         Object.fromEntries(url.searchParams),

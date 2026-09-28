@@ -5,7 +5,9 @@ description: Consume Self Healing bug evidence, coordinate factory-authored PRs 
 
 # Operate Self Healing
 
-Read OpenAPI at the user's configured `SELF_HEALING_URL/api/v1/openapi.json`. Use the configured project ID and server-side bearer key. Follow the published schemas rather than constructing provider URLs yourself.
+Read OpenAPI at the user's configured `SELF_HEALING_URL/api/v1/openapi.json`. Use the configured project ID and server-side Subtext API key (`SUBTEXT_API_KEY`). Follow the published schemas rather than constructing provider URLs yourself.
+
+**Identity boundary:** account/project lookup through Subtext is pending. `503 subtext_identity_unavailable` is an implementation gap, not an invalid key; stop the protected workflow rather than retrying or obtaining a second application key.
 
 **Scaffold boundary:** provider operations initially return `501 not_implemented`. Stop the affected workflow on 501, surface the missing capability once, and continue only independent available work. Do not poll a 501, fabricate bugs/reports, or claim that a PR was verified. A saved schedule does not imply a running scheduler.
 

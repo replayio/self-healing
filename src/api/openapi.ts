@@ -55,6 +55,9 @@ export function getOpenApiSpec() {
       operationId: operation.id,
       summary: operation.summary,
       description: [
+        operation.public
+          ? undefined
+          : "Requires Subtext account/project identity resolution, which is currently pending. Valid keys receive 503 until that adapter is implemented.",
         operation.description,
         operation.implemented
           ? ""
@@ -94,7 +97,7 @@ export function getOpenApiSpec() {
       title: "Self Healing API",
       version: "0.1.0",
       description:
-        "Experimental factory coordination API. Project and configuration storage work today; provider operations are explicit 501 contracts. A single account-scoped bearer key authenticates the factory. Keys are operator-provisioned in this scaffold; Subtext account/key federation is planned. PUT is idempotent replacement. POST has no automatic retry guarantee. Lists use exclusive opaque cursors and bounded page sizes.",
+        "Experimental factory coordination API. Project and configuration storage require verified Subtext identity; provider operations are explicit 501 contracts. The factory supplies its Subtext API key as a bearer token. No Self Healing keys are issued or configured. Subtext key verification is implemented; stable account/project identity resolution is pending, so protected operations currently fail closed with 503 after a valid key is verified. PUT is idempotent replacement. POST has no automatic retry guarantee. Lists use exclusive opaque cursors and bounded page sizes.",
     },
     servers: [{ url: "/" }],
     paths,
@@ -104,7 +107,7 @@ export function getOpenApiSpec() {
           type: "http",
           scheme: "bearer",
           description:
-            "Server-side factory key. Never embed in browser monitoring.",
+            "Your Subtext API key. Keep it server-side; never embed it in browser monitoring.",
         },
       },
     },

@@ -4,9 +4,9 @@ import "./style.css";
 
 const apiGroups = [
   [
-    "Project setup",
+    "Project configuration",
     "Projects, provider links, context, sightmaps, environments, and report preferences.",
-    "Available",
+    "Identity lookup pending",
   ],
   [
     "User understanding",
@@ -62,8 +62,8 @@ function App() {
             </a>
           </div>
           <p className="preview-note">
-            The foundation is live in this scaffold: project configuration and
-            API contracts. Provider automation is coming next.
+            Explore the API contracts and setup workflow. Protected operations
+            await Subtext account lookup.
           </p>
         </section>
         <section className="flow" aria-label="How self healing works">
@@ -121,17 +121,17 @@ function App() {
             <li>
               <h3>Configure your account and key</h3>
               <p>
-                The intended onboarding uses a Subtext account and a single API
-                key. For this preview, your service operator provisions a Self
-                Healing key. Keep it in your factory’s secret store.
+                Use your Subtext account and API key. Your factory sends that
+                same key to Self Healing; no additional application key is
+                needed. Keep it in your factory’s secret store.
               </p>
             </li>
             <li>
               <h3>Register the project and its context</h3>
               <p>
-                Use the API to save your repository, deployment URLs, product
-                context, repository sightmap, QA preferences, and report
-                destinations.
+                Once Subtext account lookup is available, use the API to save
+                your repository, deployment URLs, product context, repository
+                sightmap, QA preferences, and report destinations.
               </p>
             </li>
             <li>
@@ -158,13 +158,7 @@ function App() {
           <div className="api-grid">
             {apiGroups.map(([name, description, status]) => (
               <article key={name}>
-                <span
-                  className={
-                    status === "Available" ? "status available" : "status"
-                  }
-                >
-                  {status}
-                </span>
+                <span className="status">{status}</span>
                 <h3>{name}</h3>
                 <p>{description}</p>
               </article>
@@ -174,22 +168,25 @@ function App() {
             <div>
               <h3>Start with a project</h3>
               <p>
-                Use your deployed service URL and an operator-provisioned key.
-                Discover request and response schemas in OpenAPI.
+                Use your deployed service URL and your Subtext API key. Discover
+                request and response schemas in OpenAPI.
               </p>
               <a href="/api/v1/skills/operate-self-healing/SKILL.md">
                 Read the operation skill ↗
               </a>
             </div>
             <pre>
-              <code>{`curl "$SELF_HEALING_URL/api/v1/projects" \\\n  -H "Authorization: Bearer $SELF_HEALING_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "name": "My app",\n    "repository_url": "https://github.com/team/app",\n    "production_url": "https://app.example.com"\n  }'`}</code>
+              <code>{`curl "$SELF_HEALING_URL/api/v1/projects" \\\n  -H "Authorization: Bearer $SUBTEXT_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "name": "My app",\n    "repository_url": "https://github.com/team/app",\n    "production_url": "https://app.example.com"\n  }'`}</code>
             </pre>
           </div>
           <p className="contract-note">
-            Contract-only endpoints return <code>501 not_implemented</code>.
-            Saving configuration does not start monitoring, schedule reports, or
-            queue QA. Recordings remain with their providers; this foundation
-            stores project metadata and configuration.
+            Subtext key verification is supported. Account/project lookup is
+            pending, so protected endpoints return 503 until that adapter is
+            implemented. Contract-only provider operations will return{" "}
+            <code>501 not_implemented</code>. Saving configuration does not
+            start monitoring, schedule reports, or queue QA. Recordings remain
+            with their providers; this foundation stores project metadata and
+            configuration.
           </p>
         </section>
       </main>

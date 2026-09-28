@@ -10,6 +10,7 @@ import {
   operations,
   Project,
 } from "../src/api/contracts.ts";
+import { HttpError } from "../src/api/errors.ts";
 import { getOpenApiSpec } from "../src/api/openapi.ts";
 
 const db = new PGlite();
@@ -22,12 +23,18 @@ await db.exec(migration); // Bootstrap migration can be retried.
 after(() => db.close());
 const keyA = "a".repeat(64),
   keyB = "b".repeat(64);
-const keys = () => JSON.stringify({ [keyA]: "account-a", [keyB]: "account-b" });
+// Test-only stand-in for provider-verified identity. No key map exists in production.
+const authenticate = async (request: Request) => {
+  const key = request.headers.get("authorization")?.replace("Bearer ", "");
+  if (key === keyA) return { accountId: "account-a" };
+  if (key === keyB) return { accountId: "account-b" };
+  throw new HttpError(401, "unauthorized", "Invalid Subtext key");
+};
 const store = createStore(
   async (text, values) =>
     (await db.query<Record<string, unknown>>(text, values)).rows,
 );
-const handler = createHandler({ store: () => store, keys });
+const handler = createHandler({ store: () => store, authenticate });
 const input = {
   name: "Example",
   repository_url: "https://github.com/example/app",
@@ -62,7 +69,9 @@ test("discovery and health need no credentials or database", async () => {
     store: () => {
       throw new Error("no database");
     },
-    keys: () => undefined,
+    authenticate: async () => {
+      throw new HttpError(503, "subtext_unavailable", "Unavailable");
+    },
   });
   for (const path of ["/health", "/openapi.json"]) {
     const response = await call(path, "GET", undefined, null, isolated);
@@ -94,7 +103,7 @@ test("project create/read/patch persists across handlers without leaking account
         async (text, values) =>
           (await db.query<Record<string, unknown>>(text, values)).rows,
       ),
-    keys,
+    authenticate,
   });
   const response = await call(
     `/projects/${project.id}`,
@@ -318,7 +327,7 @@ test("unknown routes and unsupported methods return JSON, never the landing page
 
 test("database failures do not expose connection strings or SQL", async () => {
   const broken = createHandler({
-    keys,
+    authenticate,
     store: () =>
       ({
         ...store,
