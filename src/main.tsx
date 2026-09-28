@@ -27,18 +27,31 @@ const apiGroups = [
 function App() {
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       <header>
         <a className="brand" href="/" aria-label="Self Healing home">
-          <span className="brand-icon">↻</span> self healing
-          <span className="badge">Developer preview</span>
+          <img className="brand-icon" src="/images/replay-logo.svg" alt="" />
+          Self Healing
         </a>
+        <span className="badge">Developer preview</span>
         <nav aria-label="Main navigation">
-          <a href="#setup">Setup</a>
-          <a href="#api">API</a>
-          <a href="https://github.com/replayio/self-healing">GitHub ↗</a>
+          <a href="#setup">
+            <span aria-hidden="true">＋</span> Setup
+          </a>
+          <a href="#api">
+            <span aria-hidden="true">⌘</span> API reference
+          </a>
+          <a href="https://github.com/replayio/self-healing">
+            <span aria-hidden="true">↗</span> GitHub
+          </a>
         </nav>
+        <a className="qa-link" href="https://qa.replay.io">
+          Open Replay QA <span aria-hidden="true">↗</span>
+        </a>
       </header>
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <section className="hero">
           <p className="eyebrow">
             FULLSTORY + REPLAY QA + YOUR SOFTWARE FACTORY
@@ -192,7 +205,8 @@ function App() {
       </main>
       <footer>
         <a className="brand" href="/">
-          ↻ self healing
+          <img className="brand-icon" src="/images/replay-logo.svg" alt="" />
+          Self Healing
         </a>
         <p>Understand the experience. Improve the software.</p>
         <a href="https://github.com/replayio/self-healing">Source & setup ↗</a>
