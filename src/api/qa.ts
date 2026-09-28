@@ -50,11 +50,32 @@ export function qaClient(env = process.env, request: typeof fetch = fetch) {
       const status = [400, 409, 413, 429].includes(response.status)
         ? response.status
         : 503;
-      throw new HttpError(
-        status,
-        "qa_request_failed",
-        `QA rejected the request (HTTP ${response.status}).`,
-      );
+      // Only expose our bridge's fixed recovery hints, never arbitrary upstream text.
+      let code = "qa_request_failed";
+      let message = `QA rejected the request (HTTP ${response.status}).`;
+      try {
+        const body: unknown = await response.json();
+        const error =
+          body && typeof body === "object" && "error" in body
+            ? body.error
+            : undefined;
+        if (error === "Session is complete; no additional batches accepted") {
+          code = "session_complete";
+          message = "This session is sealed. Stop sending new batches.";
+        } else if (error === "Another batch is being processed; retry") {
+          code = "upload_busy";
+          message = "Retry the same batch after the current upload finishes.";
+        } else if (
+          error === "Review capacity unavailable; retry completion later"
+        ) {
+          code = "qa_capacity";
+          message =
+            "Retry the same completion request when QA capacity is available.";
+        }
+      } catch {
+        /* No raw upstream errors are returned. */
+      }
+      throw new HttpError(status, code, message);
     }
     try {
       return await response.json();

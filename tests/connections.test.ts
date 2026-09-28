@@ -218,3 +218,19 @@ test("expired MCP sessions retain HTTP 404 so QA can reconnect", async () => {
       error instanceof Error && "status" in error && error.status === 404,
   );
 });
+
+test("QA upload errors distinguish safe retries from an immutable completed session", async () => {
+  for (const [error, code] of [
+    ["Session is complete; no additional batches accepted", "session_complete"],
+    ["Another batch is being processed; retry", "upload_busy"],
+  ]) {
+    const qa = qaClient({ REPLAY_QA_API_TOKEN: "service-token" }, async () =>
+      Response.json({ error }, { status: 409 }),
+    );
+    await assert.rejects(
+      qa({}),
+      (error: unknown) =>
+        error instanceof Error && "code" in error && error.code === code,
+    );
+  }
+});
