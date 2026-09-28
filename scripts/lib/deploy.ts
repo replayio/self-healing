@@ -34,7 +34,12 @@ export function deploymentConfig(env: NodeJS.ProcessEnv) {
       "DATABASE_URL must reference the provisioned Self Healing database",
     );
   }
-  return { token, siteId, accountSlug, databaseUrl };
+  const runtime = Object.fromEntries(
+    ["SELF_HEALING_SECRET", "REPLAY_QA_API_TOKEN", "REPLAY_QA_URL"].flatMap(
+      (name) => (env[name] ? [[name, env[name]!]] : []),
+    ),
+  );
+  return { token, siteId, accountSlug, databaseUrl, runtime };
 }
 
 type EnvValue = {
@@ -111,6 +116,16 @@ export async function syncRuntimeSecrets(
   };
   if (previous) await api(`${path}/DATABASE_URL${query}`, "PUT", record);
   else await api(path + query, "POST", [record]);
+  for (const [key, value] of Object.entries(config.runtime)) {
+    const existing = records.find((item) => item.key === key);
+    const record = {
+      key,
+      scopes: ["functions"],
+      values: productionValues(existing?.values ?? [], value),
+    };
+    if (existing) await api(`${path}/${key}${query}`, "PUT", record);
+    else await api(path + query, "POST", [record]);
+  }
   // Remove the retired credential map if an operator previously installed one.
   // This dedicated site no longer accepts these keys in any context.
   if (records.some((item) => item.key === "SELF_HEALING_API_KEYS")) {

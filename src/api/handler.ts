@@ -1,3 +1,5 @@
+import { getConnectionService } from "./connections.ts";
+import { gatewayRequest } from "./gateway.ts";
 import { randomUUID } from "node:crypto";
 import { HttpError } from "./errors.ts";
 import { authenticateSubtext, type Authenticator } from "./subtext.ts";
@@ -60,7 +62,11 @@ async function readBody(request: Request): Promise<unknown> {
   }
 }
 export function createHandler(
-  dependencies: { store?: () => Store; authenticate?: Authenticator } = {},
+  dependencies: {
+    store?: () => Store;
+    authenticate?: Authenticator;
+    connections?: typeof getConnectionService;
+  } = {},
 ) {
   return async (request: Request): Promise<Response> => {
     const requestId = randomUUID();
@@ -80,6 +86,27 @@ export function createHandler(
           throw new HttpError(405, "method_not_allowed", "Use GET.");
         }
         return json(getOpenApiSpec());
+      }
+      const gateway =
+        /^\/api\/internal\/connections\/([a-f0-9-]{36})\/subtext$/.exec(path);
+      if (gateway) {
+        if (request.method !== "POST")
+          throw new HttpError(405, "method_not_allowed", "Use POST.");
+        const id = Id.parse(gateway[1]);
+        const token =
+          /^(?:Bearer|Basic) ([^\s]+)$/i.exec(
+            request.headers.get("authorization") ?? "",
+          )?.[1] ?? "";
+        if (!token)
+          throw new HttpError(
+            401,
+            "unauthorized",
+            "A gateway credential is required.",
+          );
+        const key = await (
+          dependencies.connections ?? getConnectionService
+        )().gateway(id, token);
+        return gatewayRequest(request, key, await readBody(request));
       }
       const matches = operations.flatMap((operation) => {
         const match = new RegExp(
@@ -121,6 +148,43 @@ export function createHandler(
           "not_implemented",
           `${operation.id} requires a provider adapter that is not implemented yet.`,
         );
+      if (operation.path.startsWith("/api/v1/connection")) {
+        const service = (dependencies.connections ?? getConnectionService)();
+        if (operation.id === "connect") {
+          const key = /^Bearer ([^\s]+)$/i.exec(
+            request.headers.get("authorization") ?? "",
+          )![1]!;
+          return json(
+            await service.connect(
+              account,
+              key,
+              body as { name: string; production_url: string },
+            ),
+          );
+        }
+        if (operation.id === "connection") {
+          const row = await service.get(account);
+          return json({
+            id: row.id,
+            qa_project_id: row.qa_project_id,
+            status: row.qa_project_id ? "connected" : "pending",
+          });
+        }
+        const action = {
+          ingestSession: "session",
+          connectionReviews: "reviews",
+          connectionReport: "report",
+          connectionReports: "reports",
+        }[operation.id];
+        if (!action) throw new Error("Unmapped connection operation");
+        return json(
+          await service.action(
+            account,
+            action,
+            (body ?? query ?? {}) as Record<string, unknown>,
+          ),
+        );
+      }
       let store: Store;
       try {
         store = (dependencies.store ?? getStore)();

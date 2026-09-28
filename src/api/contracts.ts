@@ -210,7 +210,117 @@ const pending = (operation: Omit<Operation, "implemented">): Operation => ({
   ...operation,
   implemented: false,
 });
+// The connection API is Obvious's operational entry point. Auxiliary payloads use
+// QA's versioned namespace/key envelope; QA validates each supported payload schema.
+export const AuxiliaryArtifact = z
+  .object({
+    namespace: z.enum(["network", "interaction", "session"]),
+    key: z.enum([
+      "captured-exchanges",
+      "captured-interactions",
+      "metrics",
+      "identity",
+      "capture-context",
+    ]),
+    schema_version: z.literal(1),
+    payload: z.record(z.unknown()),
+  })
+  .strict()
+  .refine(
+    (artifact) =>
+      ({
+        network: ["captured-exchanges"],
+        interaction: ["captured-interactions"],
+        session: ["metrics", "identity", "capture-context"],
+      })[artifact.namespace].includes(artifact.key),
+    "Unsupported auxiliary namespace/key pair",
+  );
+const ConnectionInput = object({
+  name: z.string().trim().min(1).max(100),
+  production_url: Url,
+});
+const ConnectionResponse = object({
+  id: Id,
+  qa_project_id: z.string().nullable(),
+  status: z.enum(["connected", "pending"]),
+});
+const connectionPath = "/api/v1/connection";
+const connectionOperations: Operation[] = [
+  {
+    id: "connect",
+    method: "POST",
+    path: connectionPath,
+    summary: "Create or recover one QA project for this Subtext key",
+    implemented: true,
+    body: ConnectionInput,
+    response: ConnectionResponse,
+  },
+  {
+    id: "connection",
+    method: "GET",
+    path: connectionPath,
+    summary: "Read this key's QA connection",
+    implemented: true,
+    response: ConnectionResponse,
+  },
+  {
+    id: "ingestSession",
+    method: "POST",
+    path: connectionPath + "/sessions",
+    summary:
+      "Register a session and upload auxiliary data through Self Healing",
+    implemented: true,
+    description:
+      "Use a server-side capture proxy. Retry failed uploads with identical event IDs. Set complete only after all uploads finish; completed sessions are immutable. QA validates the versioned artifact schemas.",
+    body: object({
+      session_url: Url,
+      auxiliary_data: z.array(AuxiliaryArtifact).max(10).default([]),
+      complete: z.boolean().default(false),
+    }),
+    response: z
+      .object({ session_id: z.string(), status: z.string() })
+      .passthrough(),
+  },
+  {
+    id: "connectionReviews",
+    method: "GET",
+    path: connectionPath + "/reviews",
+    summary: "Read session review results and processing state",
+    implemented: true,
+    query: object({
+      page: z.coerce.number().int().min(0).max(10000).default(0),
+      reviewer: z
+        .enum(["goals-and-outcomes", "friction-and-recovery"])
+        .default("friction-and-recovery"),
+    }),
+    response: z.object({}).passthrough(),
+  },
+  {
+    id: "connectionReport",
+    method: "POST",
+    path: connectionPath + "/reports",
+    summary: "Queue an idempotent daily behavior report",
+    implemented: true,
+    body: object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+    response: z.object({ status: z.string() }).passthrough(),
+  },
+  {
+    id: "connectionReports",
+    method: "GET",
+    path: connectionPath + "/reports",
+    summary: "Read daily behavior reports and their sources",
+    query: object({
+      day: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+    }),
+    implemented: true,
+    response: z.object({}).passthrough(),
+  },
+];
 export const operations: Operation[] = [
+  ...connectionOperations,
   {
     id: "health",
     method: "GET",
@@ -544,3 +654,28 @@ export const operations: Operation[] = [
     response: Job,
   }),
 ];
+
+export const GatewayRpc = z
+  .object({
+    jsonrpc: z.literal("2.0"),
+    id: z.union([z.string(), z.number()]).optional(),
+    method: z.enum([
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+      "tools/call",
+    ]),
+    params: z.record(z.unknown()).optional(),
+  })
+  .strict();
+export const GatewayCall = z
+  .object({
+    name: z.enum([
+      "review-open",
+      "review-zoom",
+      "review-snapshot",
+      "review-close",
+    ]),
+    arguments: z.record(z.unknown()).optional(),
+  })
+  .strict();

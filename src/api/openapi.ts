@@ -36,6 +36,7 @@ export function getOpenApiSpec() {
       410: "Expired event cursor",
       413: "Body exceeds 256 KiB",
       415: "Expected application/json",
+      429: "QA review capacity unavailable; retry with backoff",
       500: "Internal error",
       503: "Service not configured or database unavailable",
     }))
@@ -57,7 +58,7 @@ export function getOpenApiSpec() {
       description: [
         operation.public
           ? undefined
-          : "Requires Subtext account/project identity resolution, which is currently pending. Valid keys receive 503 until that adapter is implemented.",
+          : "Supply your Subtext key as a bearer credential. Validated keys are isolated using a server-keyed fingerprint; each key has its own connection.",
         operation.description,
         operation.implemented
           ? ""
@@ -97,7 +98,7 @@ export function getOpenApiSpec() {
       title: "Self Healing API",
       version: "0.1.0",
       description:
-        "Experimental factory coordination API. Project and configuration storage require verified Subtext identity; provider operations are explicit 501 contracts. The factory supplies its Subtext API key as a bearer token. No Self Healing keys are issued or configured. Subtext key verification is implemented; stable account/project identity resolution is pending, so protected operations currently fail closed with 503 after a valid key is verified. PUT is idempotent replacement. POST has no automatic retry guarantee. Lists use exclusive opaque cursors and bounded page sizes.",
+        "Factories authenticate with their Subtext key. The connection API provisions one QA project per validated key and mediates session ingestion, reviews and daily reports. QA accesses Subtext through Self Healing. Legacy project provider operations remain explicit 501 contracts. Retry connection and session requests with identical bodies.",
     },
     servers: [{ url: "/" }],
     paths,

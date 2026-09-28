@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { credentialVault } from "./credentials.ts";
 import { HttpError } from "./errors.ts";
 
 // Protocol follows fullstorydev/subtext-cli internal/cli/auth.go and
@@ -97,8 +98,8 @@ export function createSubtextAuthenticator(
         "Subtext returned an unsupported authentication response.",
       );
     }
-    // Successful tools/list proves access, but supplies no stable account/project ID.
-    // Do not derive a tenant from the key, an unsigned token claim, or client input.
+    // Successful tools/list proves access. The production resolver below isolates
+    // each validated key, as required by the one-QA-project-per-key contract.
     if (!options.resolveIdentity) {
       throw new HttpError(
         503,
@@ -121,4 +122,8 @@ export function createSubtextAuthenticator(
   };
 }
 
-export const authenticateSubtext = createSubtextAuthenticator();
+export const authenticateSubtext = createSubtextAuthenticator({
+  resolveIdentity: async (key) => ({
+    accountId: credentialVault().identity(key),
+  }),
+});
