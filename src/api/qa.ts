@@ -1,5 +1,15 @@
 import { HttpError } from "./errors.ts";
 
+export class QARequestError extends HttpError {
+  constructor(readonly upstreamStatus: number) {
+    super(
+      [400, 409, 413, 429].includes(upstreamStatus) ? upstreamStatus : 503,
+      "qa_request_failed",
+      `QA rejected the request (HTTP ${upstreamStatus}).`,
+    );
+  }
+}
+
 export function qaClient(env = process.env, request: typeof fetch = fetch) {
   const origin = new URL(env.REPLAY_QA_URL ?? "https://qa.replay.io");
   if (
@@ -47,12 +57,7 @@ export function qaClient(env = process.env, request: typeof fetch = fetch) {
         "QA did not respond. Retry the same request.",
       );
     }
-    if (!response.ok)
-      throw new HttpError(
-        [400, 409, 413, 429].includes(response.status) ? response.status : 503,
-        "qa_request_failed",
-        `QA rejected the request (HTTP ${response.status}).`,
-      );
+    if (!response.ok) throw new QARequestError(response.status);
     try {
       return await response.json();
     } catch {

@@ -380,7 +380,39 @@ export const DashboardBug = z.object({
   severity: z.string(),
   status: z.string(),
   discovered_at: z.string(),
-  url: HttpsUrl,
+  url: z.string().startsWith("/dashboard?tab=bugs&bug="),
+  kind: z.string().nullable(),
+  fix_prs: z.array(
+    z.object({
+      repo_full_name: z.string(),
+      pr_number: z.number().int().positive(),
+      url: HttpsUrl,
+      state: z.string().nullable(),
+    }),
+  ),
+});
+export const DashboardBugDetail = DashboardBug.extend({
+  description: z.string().nullable(),
+  reproduction_steps: z.string().nullable(),
+  expected_behavior: z.string().nullable(),
+  actual_behavior: z.string().nullable(),
+  notes: z.string().nullable(),
+  resolution: z.string().nullable(),
+  analysis: z
+    .object({
+      impact: z.string().nullish(),
+      root_cause: z.object({ text: z.string() }).nullish(),
+      chain: z.array(z.object({ text: z.string() })).optional(),
+      chronology: z
+        .array(
+          z.object({
+            text: z.string().optional(),
+            screenshot_url: HttpsUrl.nullable().optional(),
+          }),
+        )
+        .optional(),
+    })
+    .nullable(),
 });
 export const DashboardOverview = z.object({
   name: z.string(),
@@ -496,12 +528,30 @@ export const operations: Operation[] = [
     method: "GET",
     path: "/api/v1/dashboard/bugs",
     dashboard: true,
-    summary: "List open bugs with QA report links",
+    summary: "List open bugs with kinds, fix PRs and dashboard report links",
     implemented: true,
     query: z
       .object({ page: z.coerce.number().int().min(1).max(100000).default(1) })
       .strict(),
     response: DashboardBugs,
+  },
+  {
+    id: "dashboardBug",
+    method: "GET",
+    path: "/api/v1/dashboard/bug",
+    dashboard: true,
+    summary: "Read a bug report belonging to the connected project",
+    implemented: true,
+    query: z
+      .object({
+        bug_id: z
+          .string()
+          .min(1)
+          .max(256)
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
+      })
+      .strict(),
+    response: DashboardBugDetail,
   },
   {
     id: "dashboardReports",

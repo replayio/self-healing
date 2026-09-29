@@ -1,12 +1,13 @@
 import { z } from "zod";
 import {
   DashboardBug,
+  DashboardBugDetail,
   DashboardBugs,
   DashboardOverview,
   DashboardReports,
 } from "./contracts.ts";
 import { HttpError } from "./errors.ts";
-import { qaClient } from "./qa.ts";
+import { qaClient, QARequestError } from "./qa.ts";
 import type { Connection } from "./connections.ts";
 
 const Count = z.number().int().nonnegative();
@@ -22,7 +23,54 @@ const Bug = z.object({
   severity: z.string(),
   status: z.string(),
   discovered_at: DateString,
+  polish_category: z.string().nullish(),
+  test_run_id: z.string().nullish(),
+  fix_prs: z
+    .array(
+      z.object({
+        repo_full_name: z.string().regex(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/),
+        pr_number: z.number().int().positive(),
+        pr_state: z.string().nullish(),
+        merged_at: z.string().nullish(),
+      }),
+    )
+    .nullish(),
 });
+const Analysis = DashboardBugDetail.shape.analysis
+  .unwrap()
+  .extend({
+    chronology: z
+      .array(
+        z.object({
+          text: z.string().optional(),
+          screenshot_url: z.string().nullish(),
+          evidence: z
+            .array(z.object({ tool: z.string(), result: z.string().nullish() }))
+            .optional(),
+        }),
+      )
+      .optional(),
+  })
+  .nullable();
+// Match QA's Screenshot evidence first, then its legacy screenshot_url fallback.
+function screenshot(
+  step: NonNullable<
+    NonNullable<z.infer<typeof Analysis>>["chronology"]
+  >[number],
+) {
+  for (const e of step.evidence ?? []) {
+    if (e.tool === "Screenshot") {
+      const match = e.result?.match(
+        /https:\/\/static\.replay\.io\/recordings\/[^\s"']+\/analysis\/screenshot-[^\s"'/]+\.jpg/,
+      );
+      if (match) return match[0];
+    }
+  }
+  const url = step.screenshot_url;
+  return url && /^https:\/\/static\.replay\.io\/recordings\/[^\s]+$/.test(url)
+    ? url
+    : null;
+}
 const BugPage = z.object({ items: z.array(Bug), total: Count });
 const SessionPage = z.object({
   sessions: z.array(
@@ -99,7 +147,6 @@ const DAY = 86400000;
 // Use existing QA APIs; neither recordings nor report bodies are persisted by Self Healing.
 export function dashboardData(
   qa: ReturnType<typeof qaClient>,
-  qaOrigin = process.env.REPLAY_QA_URL ?? "https://qa.replay.io",
   now = Date.now(),
 ) {
   const deadline = Date.now() + 22000;
@@ -119,13 +166,16 @@ export function dashboardData(
       );
     return parsed.data;
   }
-  const bug = (b: z.infer<typeof Bug>, c: Connection) =>
+  const bug = (b: z.infer<typeof Bug>) =>
     DashboardBug.parse({
       ...b,
-      url: new URL(
-        `/projects/${encodeURIComponent(c.qa_project_id!)}/bugs/${encodeURIComponent(b.id)}`,
-        qaOrigin,
-      ).href,
+      kind: b.polish_category ?? (b.test_run_id ? "testing" : null),
+      url: `/dashboard?tab=bugs&bug=${encodeURIComponent(b.id)}`,
+      fix_prs: (b.fix_prs ?? []).map((pr) => ({
+        ...pr,
+        url: `https://github.com/${pr.repo_full_name}/pull/${pr.pr_number}`,
+        state: pr.merged_at ? "merged" : (pr.pr_state ?? null),
+      })),
     });
   const reviewerPath = (c: Connection) =>
     `/api/project-session-reviewers?project_id=${encodeURIComponent(c.qa_project_id!)}`;
@@ -249,13 +299,69 @@ export function dashboardData(
         days,
       });
     },
+    async bug(c: Connection, id: string) {
+      // Check ownership before parsing/returning report content. Never pass the raw QA row through.
+      const raw = await read(
+        z.object({ id: z.string(), project_id: z.string() }).passthrough(),
+        `/api/bugs/${encodeURIComponent(id)}`,
+      ).catch((error) => {
+        if (
+          error instanceof QARequestError &&
+          [403, 404].includes(error.upstreamStatus)
+        )
+          throw new HttpError(404, "not_found", "Bug not found.");
+        throw error;
+      });
+      if (raw.project_id !== c.qa_project_id || raw.id !== id)
+        throw new HttpError(404, "not_found", "Bug not found.");
+      const parsed = Bug.merge(
+        DashboardBugDetail.pick({
+          description: true,
+          reproduction_steps: true,
+          expected_behavior: true,
+          actual_behavior: true,
+          notes: true,
+          analysis: true,
+        }).partial(),
+      )
+        .extend({
+          wontfix_reason: z.string().nullish(),
+          analysis: Analysis.optional(),
+        })
+        .safeParse(raw);
+      if (!parsed.success)
+        throw new HttpError(
+          503,
+          "qa_contract_changed",
+          "QA returned unexpected bug data.",
+        );
+      const b = parsed.data;
+      return DashboardBugDetail.parse({
+        ...bug(b),
+        description: b.description ?? null,
+        reproduction_steps: b.reproduction_steps ?? null,
+        expected_behavior: b.expected_behavior ?? null,
+        actual_behavior: b.actual_behavior ?? null,
+        notes: b.notes ?? null,
+        resolution: b.wontfix_reason ?? null,
+        analysis: b.analysis
+          ? {
+              ...b.analysis,
+              chronology: b.analysis.chronology?.map((step) => ({
+                text: step.text,
+                screenshot_url: screenshot(step),
+              })),
+            }
+          : null,
+      });
+    },
     async bugs(c: Connection, page: number) {
       const result = await read(
         BugPage,
         `${bugsPath(c)}&status=open&page=${page}`,
       );
       return DashboardBugs.parse({
-        items: result.items.map((b) => bug(b, c)),
+        items: result.items.map((b) => bug(b)),
         total: result.total,
         page,
         has_more: page * 100 < result.total,
@@ -269,7 +375,7 @@ export function dashboardData(
       const run = result.run;
       if (!run) return DashboardReports.parse({ ...result, run: null });
       const bugs = run.bugs.map((b) => ({
-        ...bug({ ...b, discovered_at: b.opened_at }, c),
+        ...bug({ ...b, discovered_at: b.opened_at }),
         is_duplicate: b.is_duplicate,
         impacted_sessions: b.impacted_sessions,
       }));

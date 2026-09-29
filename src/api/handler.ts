@@ -235,13 +235,19 @@ export function createHandler(
             REPLAY_QA_API_TOKEN: credentials.qaToken,
           }),
         );
-        const input = (query ?? {}) as { page?: number; day?: string };
+        const input = (query ?? {}) as {
+          page?: number;
+          day?: string;
+          bug_id?: string;
+        };
         const result =
           operation.id === "dashboardOverview"
             ? await data.overview(connection)
             : operation.id === "dashboardBugs"
               ? await data.bugs(connection, input.page!)
-              : await data.reports(connection, input.day);
+              : operation.id === "dashboardBug"
+                ? await data.bug(connection, input.bug_id!)
+                : await data.reports(connection, input.day);
         return json(operation.response.parse(result));
       }
       // Planned routes authenticate and validate requests, but never pretend to queue work.
