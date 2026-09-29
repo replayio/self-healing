@@ -62,3 +62,11 @@ This setup has QA and Subtext adapters, but no automatic session discovery, Self
 The dashboard uses the existing account-to-connection scope and dedicated QA credential. A factory exchanges its bearer key for a five-minute, single-use launch ticket. The browser exchanges that ticket for a 24-hour Secure/HttpOnly cookie; cookie authentication is accepted only by the read-only dashboard routes, never by connection/configuration APIs or launch-link creation. See [dashboard.md](dashboard.md) for data definitions and rollout.
 
 Migration `005_dashboard_sessions.sql` adds hashed, expiring launch/browser tokens. Atomic token rotation provides single-use redemption across Netlify instances. This table stores authentication metadata only; dashboard queries read QA directly and do not persist reports or session contents.
+
+## Factory bug pipeline
+
+The operating skill uses account-key-only connection APIs to list/read bugs, record WONTFIX reasons through QA's existing bug update API, and rerun a bug's original saved journey/version against a preview through QA's test-run API. All bug, source run, journey and result reads check ownership against the authenticated connection. Dashboard cookies cannot use these routes.
+
+Verification metadata (bug, PR, head SHA and preview URL) lives in the durable QA run goal. Self Healing adds no recording store or verification table. Run outcomes and recording references are projected from QA, never manufactured. The supplied head SHA is a factory assertion; the factory must verify the deployment's commit and inspect actual reproduction coverage. There is no setter for a verified verdict. Creation is not idempotent; after uncertain writes the factory must reconcile paginated runs before retrying. A bug without an available original journey is explicitly unverifiable through this endpoint.
+
+The factory schedules polling (suggested every 15 minutes), coordinates one worker per bug, tracks PRs and verification run IDs, and follows the repository's merge policy. This does not implement the legacy claim/event/managed-fix contracts.

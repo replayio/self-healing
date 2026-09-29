@@ -140,3 +140,7 @@ Generate the link immediately before this handoff, rather than storing it in pro
 The link is single-use and expires after five minutes. Opening it establishes a read-only browser session for 24 hours. The account key stays in the factory's secret store; do not put it in a URL or browser code. If the link was already used or expired, create another. Opening a link for a different project switches the dashboard to that project's resources in that browser.
 
 The dashboard has Overview, Bugs, and Reports tabs. Overview shows bug counts and daily session activity; Bugs links to existing QA bug reports; Reports lets the user cycle through daily reports. No separate signup is needed. The QA report links use QA's existing access rules.
+
+## Run the ongoing pipeline
+
+After setup, follow [operate-self-healing](../operate-self-healing/SKILL.md) to arrange periodic bug triage (suggested every 15 minutes), record WONTFIX reasons for unsuitable reports, create fix PRs, and verify them against previews with QA. Setup acceptance remains delivery of real session inputs; do not wait for the first bug or report to complete setup.

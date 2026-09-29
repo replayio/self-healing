@@ -200,6 +200,7 @@ export interface Operation {
   implemented: boolean;
   public?: boolean;
   dashboard?: boolean;
+  pipeline?: boolean;
   body?: z.ZodTypeAny;
   query?: z.ZodTypeAny;
   response: z.ZodTypeAny;
@@ -340,7 +341,7 @@ export const agentSkills = [
     id: "operate-self-healing",
     name: "Operate Self Healing",
     description:
-      "Forward session captures, read automatic reviews and daily reports, and handle retries and blocked work.",
+      "Monitor bugs every 15 minutes, triage reports, record WONTFIX reasons, create fix PRs, and verify previews with QA through Self Healing.",
     path: "/api/v1/skills/operate-self-healing/SKILL.md",
   },
 ] as const;
@@ -414,6 +415,44 @@ export const DashboardBugDetail = DashboardBug.extend({
     })
     .nullable(),
 });
+// Provider IDs are opaque QA identifiers, not local UUIDs.
+export const QAId = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/);
+export const PipelineBug = DashboardBugDetail.extend({
+  test_run_id: QAId.nullable(),
+  recording_urls: z.array(HttpsUrl),
+  fix_reference: HttpsUrl,
+});
+export const VerificationInput = z
+  .object({
+    bug_id: QAId,
+    pr_url: z
+      .string()
+      .url()
+      .regex(
+        /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/pull\/[1-9][0-9]*$/,
+      ),
+    head_sha: Sha,
+    preview_url: HttpsUrl,
+  })
+  .strict();
+export const BugVerification = VerificationInput.extend({
+  run_id: QAId,
+  status: z.string(),
+  outcome_status: z.string().nullable(),
+  outcome_reason: z.string().nullable(),
+  bugs_found_count: Count,
+  recording_urls: z.array(HttpsUrl),
+  created_at: z.string(),
+});
+export const BugVerifications = z.object({
+  items: z.array(BugVerification),
+  page: Count,
+  has_more: z.boolean(),
+});
 export const DashboardOverview = z.object({
   name: z.string(),
   open_bugs: Count,
@@ -474,6 +513,68 @@ export const DashboardReports = z.object({
 });
 
 export const operations: Operation[] = [
+  {
+    id: "pipelineBugs",
+    method: "GET",
+    path: "/api/v1/connection/bugs",
+    pipeline: true,
+    implemented: true,
+    summary: "List open bugs for factory triage",
+    query: z
+      .object({ page: z.coerce.number().int().min(1).max(100000).default(1) })
+      .strict(),
+    response: DashboardBugs,
+  },
+  {
+    id: "pipelineBug",
+    method: "GET",
+    path: "/api/v1/connection/bug",
+    pipeline: true,
+    implemented: true,
+    summary: "Read a bug report and recording references",
+    query: z.object({ bug_id: QAId }).strict(),
+    response: PipelineBug,
+  },
+  {
+    id: "pipelineWontfix",
+    method: "POST",
+    path: "/api/v1/connection/bugs/wontfix",
+    pipeline: true,
+    implemented: true,
+    summary: "Dismiss a bug with an evidence-backed reason",
+    body: z
+      .object({ bug_id: QAId, reason: z.string().trim().min(1).max(20000) })
+      .strict(),
+    response: PipelineBug,
+  },
+  {
+    id: "pipelineVerify",
+    method: "POST",
+    path: "/api/v1/connection/bug-verifications",
+    pipeline: true,
+    implemented: true,
+    summary: "Rerun a bug's original QA journey against a preview",
+    description:
+      "Requires an available original journey. Stores PR/head/preview references in the QA run goal; the factory must confirm the deployed preview matches the SHA. Creation is not idempotent: after an uncertain response, list runs before retrying. Does not mark the bug fixed or attest to the preview's commit.",
+    body: VerificationInput,
+    response: BugVerification,
+    status: 201,
+  },
+  {
+    id: "pipelineVerifications",
+    method: "GET",
+    path: "/api/v1/connection/bug-verifications",
+    pipeline: true,
+    implemented: true,
+    summary: "Read preview verification runs for a bug",
+    query: z
+      .object({
+        bug_id: QAId,
+        page: z.coerce.number().int().min(1).max(100000).default(1),
+      })
+      .strict(),
+    response: BugVerifications,
+  },
   {
     id: "createDashboardSession",
     method: "POST",

@@ -4,6 +4,8 @@ import {
   requireDashboardOrigin,
 } from "./dashboard-auth.ts";
 import { dashboardData } from "./dashboard-data.ts";
+import { pipelineData } from "./pipeline.ts";
+import { VerificationInput } from "./contracts.ts";
 import { qaClient } from "./qa.ts";
 import { getAccountService } from "./accounts.ts";
 import { getConnectionService } from "./connections.ts";
@@ -77,6 +79,7 @@ export function createHandler(
     accounts?: typeof getAccountService;
     dashboardAuth?: typeof getDashboardAuth;
     dashboardData?: typeof dashboardData;
+    pipelineData?: typeof pipelineData;
   } = {},
 ) {
   return async (request: Request): Promise<Response> => {
@@ -215,6 +218,46 @@ export function createHandler(
         return json(
           operation.response.parse(await dashboardSession().launch(account)),
         );
+      }
+      if (operation.pipeline) {
+        const credentials = await (
+          dependencies.accounts ?? getAccountService
+        )().credentials(account);
+        const connection = await (
+          dependencies.connections ?? getConnectionService
+        )(credentials.qaToken).get(account);
+        if (!connection.ready)
+          throw new HttpError(
+            409,
+            "connection_pending",
+            "Finish connection setup first.",
+          );
+        const data = (dependencies.pipelineData ?? pipelineData)(
+          qaClient({
+            ...process.env,
+            REPLAY_QA_API_TOKEN: credentials.qaToken,
+          }),
+        );
+        const input = (body ?? query ?? {}) as {
+          page?: number;
+          bug_id?: string;
+          reason?: string;
+        };
+        const result =
+          operation.id === "pipelineBugs"
+            ? await data.bugs(connection, input.page!)
+            : operation.id === "pipelineBug"
+              ? await data.bug(connection, input.bug_id!)
+              : operation.id === "pipelineWontfix"
+                ? await data.wontfix(connection, input.bug_id!, input.reason!)
+                : operation.id === "pipelineVerify"
+                  ? await data.verify(connection, VerificationInput.parse(body))
+                  : await data.verifications(
+                      connection,
+                      input.bug_id!,
+                      input.page!,
+                    );
+        return json(operation.response.parse(result), operation.status ?? 200);
       }
       if (operation.dashboard) {
         const credentials = await (
