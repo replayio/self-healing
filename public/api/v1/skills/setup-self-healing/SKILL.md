@@ -127,13 +127,15 @@ Setup is complete when the deployed application's real session captures are succ
 3. Confirm that the forwarding route receives Self Healing's successful response from `POST /api/v1/connection/sessions`: HTTP 200 with `status: "stored"` and a nonempty `session_id`. The route must pass that response back to the package. Verify the uploads containing the exercised network and interaction events succeed, rather than checking only an initial metadata batch. Check that the account key stays server-side and the route uses the app's intended access controls.
 4. Report the deployed integration, the test session URL, and Self Healing's returned session ID and ingestion status. If delivery fails, report the failed request's status/error and fix the capture or forwarding problem before declaring setup complete. Never include API keys or secret callback URLs.
 
-Once delivery is verified, declare setup complete. Do not wait for the session to go quiet, poll QA reviewers, or wait for a daily report. Do not schedule those checks as setup follow-ups or hold the setup handoff for them. Continue forwarding capture batches normally; no completion request or recording shutdown is needed.
+Once delivery is verified, declare setup complete and open the dashboard for the user as described below. Do not wait for the session to go quiet, poll QA reviewers, or wait for a daily report. Do not schedule those checks as setup follow-ups or hold the setup handoff for them. Continue forwarding capture batches normally; no completion request or recording shutdown is needed.
 
 For separately requested ongoing operation, read `/api/v1/skills/operate-self-healing/SKILL.md`. On 401, check which credential is being used and do not fall back to Subtext bearer authentication. On 429 retry with backoff. On 503 or `provisioning_pending`, preserve IDs and report the operator action needed. On 501, stop that unsupported operation; never invent a replacement provider API.
 
 ## Open the dashboard
 
-To let the user view this project's activity, call `POST /api/v1/dashboard-sessions` server-side with the Self Healing account bearer key (no body required). Return the response's `url` to the user as an **Open dashboard** link. Request it when the user wants to open the dashboard, rather than storing it in project configuration.
+When setup is complete, call `POST /api/v1/dashboard-sessions` server-side with the Self Healing account bearer key (no body required). Open the returned `url` for the user in the way most appropriate to your environment: use a user-visible browser tab or app navigation tool when available. If you cannot open it directly, present a clickable **Open dashboard** link in your completion message. Do not wait for the user to ask.
+
+Generate the link immediately before this handoff, rather than storing it in project configuration. Open it in the user's browser context; do not consume the single-use link in a private automation browser before handing it to them.
 
 The link is single-use and expires after five minutes. Opening it establishes a read-only browser session for 24 hours. The account key stays in the factory's secret store; do not put it in a URL or browser code. If the link was already used or expired, create another. Opening a link for a different project switches the dashboard to that project's resources in that browser.
 
