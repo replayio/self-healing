@@ -76,36 +76,66 @@ function App() {
             Self Healing coordinates session insights, QA, and fix verification
             through one API.
           </p>
-          <div className="actions">
-            <a className="button" href="#setup">
-              Set up your factory <span>→</span>
-            </a>
-            <a className="secondary" href="/api/v1/openapi.json">
-              Explore the API ↗
-            </a>
-          </div>
           <div className="setup-prompt">
-            <label htmlFor="setup-prompt">
-              Paste this into your factory or coding agent
-            </label>
-            <textarea
-              id="setup-prompt"
-              readOnly
-              value={prompt}
-              onFocus={(event) => event.currentTarget.select()}
-              rows={3}
-              spellCheck={false}
-            />
-            <div className="prompt-actions">
-              <button className="button" type="button" onClick={copyPrompt}>
-                Copy setup prompt
-              </button>
-              <a
-                className="text-link"
-                href="/api/v1/skills/setup-self-healing/SKILL.md"
-              >
-                Preview the setup skill ↗
+            <div className="prompt-heading">
+              <label htmlFor="setup-prompt">
+                Paste this into your factory or coding agent
+              </label>
+              <a href="/api/v1/skills/setup-self-healing/SKILL.md">
+                Setup skill ↗
               </a>
+            </div>
+            <div className="prompt-field">
+              <textarea
+                id="setup-prompt"
+                readOnly
+                value={prompt}
+                onFocus={(event) => event.currentTarget.select()}
+                rows={3}
+                spellCheck={false}
+              />
+              <button
+                className="copy-icon"
+                type="button"
+                onClick={copyPrompt}
+                aria-label="Copy setup prompt"
+                title="Copy setup prompt"
+              >
+                {copyStatus.startsWith("Copied") ? (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m5 12 4 4L19 6" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="8" y="8" width="12" height="12" rx="2" />
+                    <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            <div className="prompt-links">
+              <a href="/api/v1/skills">All skills</a>
+              <a href="/api/v1/openapi.json">API reference</a>
             </div>
             <p className="copy-status" role="status">
               {copyStatus}
@@ -150,8 +180,8 @@ function App() {
               <br />A continuous feedback loop.
             </h2>
             <p className="section-copy">
-              Bring a software factory, or use a coding agent for a
-              more manual workflow. Choose the capabilities your team needs.
+              Bring a software factory, or use a coding agent for a more manual
+              workflow. Choose the capabilities your team needs.
             </p>
             <a
               className="text-link"
