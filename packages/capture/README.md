@@ -18,16 +18,24 @@ The capture implementation lives in `packages/capture/src`. Change producers her
 independent ingestion schemas and compatibility tests compatible. Installation instructions belong
 only in the Self Healing skills.
 
-From the repository root:
+Publish locally with interactive npm authentication and 2FA:
 
 ```sh
 npm ci
-npm test
-npm run build
-npm pack --workspace @replayio/self-healing-capture --pack-destination /tmp
-# After review, with npm publishing access to @replayio:
-npm publish --workspace @replayio/self-healing-capture --access public
+npm run capture:publish
 ```
 
-A PR/build alone does not publish to npm. Update the package version and emitted producer version together;
-installers receive updates through normal dependency upgrades and their lockfiles.
+Run from a terminal using Node 22.14+ and an npm account with publishing access to `@replayio`.
+The script checks whether the manifest version exists, runs tests and the production build, packs
+the tested output into a temporary directory, logs into npm if necessary, and publishes that exact
+artifact. npm owns the browser login/security-key/2FA prompts. Credentials and OTPs are not script
+arguments or repository secrets. Follow npm's authentication prompt when it appears.
+
+Use `npm run capture:publish -- --dry-run` to test building and packaging without login or publication.
+Registry errors fail the version check; already-published versions are skipped. After publishing,
+the script checks that the version is visible on npm. If visibility verification fails, rerun: an
+existing version is skipped, never overwritten. Temporary tarballs are removed when the script exits.
+
+For later releases, update the package version and emitted producer metadata together, update the
+root lockfile, and run the script from the reviewed revision. The producer test checks that metadata
+matches the manifest. Installers receive updates through dependency upgrades and their lockfiles.
