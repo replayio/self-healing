@@ -30,7 +30,7 @@ function App() {
   async function copyPrompt() {
     try {
       await navigator.clipboard.writeText(prompt);
-      setCopyStatus("Copied. Paste it into Obvious or your coding agent.");
+      setCopyStatus("Copied. Paste it into your factory or coding agent.");
     } catch {
       setCopyStatus("Select the prompt above and copy it manually.");
     }
@@ -86,7 +86,7 @@ function App() {
           </div>
           <div className="setup-prompt">
             <label htmlFor="setup-prompt">
-              Paste this into Obvious or your coding agent
+              Paste this into your factory or coding agent
             </label>
             <textarea
               id="setup-prompt"
@@ -150,7 +150,7 @@ function App() {
               <br />A continuous feedback loop.
             </h2>
             <p className="section-copy">
-              Bring a software factory like Obvious, or use a coding agent for a
+              Bring a software factory, or use a coding agent for a
               more manual workflow. Choose the capabilities your team needs.
             </p>
             <a
