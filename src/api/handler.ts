@@ -278,6 +278,8 @@ export function createHandler(
           });
         }
         const action = {
+          getReportDestinations: "reportDestinations",
+          updateReportDestinations: "updateReportDestinations",
           ingestSession: "session",
           connectionReviews: "reviews",
           connectionReport: "report",

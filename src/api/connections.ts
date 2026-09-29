@@ -1,3 +1,4 @@
+import { reportDestinations } from "./report-destinations.ts";
 import { enableSessionReviews } from "./review-settings.ts";
 import { qaSessionCredential } from "./qa-session-credential.ts";
 import { randomUUID } from "node:crypto";
@@ -183,7 +184,7 @@ export function connectionService(
       account: string,
       action: string,
       input: Record<string, unknown> = {},
-    ) {
+    ): Promise<Record<string, unknown>> {
       const c = await get(account);
       if (!c.ready)
         throw new HttpError(
@@ -191,6 +192,10 @@ export function connectionService(
           "connection_pending",
           "Retry connection setup first.",
         );
+      if (action === "reportDestinations")
+        return reportDestinations(qa, c.qa_project_id!).read();
+      if (action === "updateReportDestinations")
+        return reportDestinations(qa, c.qa_project_id!).update(input);
       if (action === "session") return sessions.ingest(c, input);
       if (action === "reviews")
         return ObjectResponse.parse(

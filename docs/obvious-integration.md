@@ -116,3 +116,11 @@ QA's existing activation policy applies to sessions first registered after autom
 enabled. This rollout does not backfill sessions registered before that point; historical session
 backfill is separate from automatic processing of newly captured sessions. Previously stored sealed
 flags and completion receipts remain readable, but uploads no longer create or enforce local seals.
+
+## Daily report destinations
+
+Factories configure delivery through `GET` and `PATCH /api/v1/connection/report-destinations`, authenticated with the existing account key. The connected QA project is resolved server-side; clients cannot supply another account/project ID. PATCH accepts any combination of `email: {addresses: [...]}`, `slack: {webhook_url: ...}`, and `discord: {webhook_url: ...}`. Omitted channels are preserved, and `null` removes a channel. Email always maps to QA's custom recipient list, because the per-account QA service identity is not the user’s mailbox.
+
+Self Healing calls QA's existing `GET /api/projects/{id}` and `PATCH /api/projects/{id}` with `action: "update-settings"` and only `summary_destinations`. QA owns storage and publication when a daily summary completes. Self Healing does not persist webhook URLs or send messages itself. Returned settings contain email recipients and webhook-present flags; full project responses and webhook credentials are never forwarded to clients.
+
+The setup skill discovers suitable existing destinations and asks for missing choices or credentials. It verifies saved configuration without waiting for a report or sending test messages. Saving is not delivery verification. QA currently logs delivery failures; this API does not provide a durable delivery-status feed or retry queue. No new service secrets, database migrations, or QA changes are required.

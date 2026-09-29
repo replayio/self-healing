@@ -19,6 +19,7 @@ export function qaClient(env = process.env, request: typeof fetch = fetch) {
     path: string,
     body?: unknown,
     token = env.REPLAY_QA_API_TOKEN,
+    method: "GET" | "POST" | "PATCH" = body === undefined ? "GET" : "POST",
   ): Promise<unknown> => {
     if (!token)
       throw new HttpError(
@@ -31,7 +32,7 @@ export function qaClient(env = process.env, request: typeof fetch = fetch) {
     let response: Response;
     try {
       response = await request(new URL(path, origin), {
-        method: body === undefined ? "GET" : "POST",
+        method,
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
