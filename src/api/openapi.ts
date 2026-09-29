@@ -58,7 +58,7 @@ export function getOpenApiSpec() {
       description: [
         operation.public
           ? undefined
-          : "Supply your Subtext key as a bearer credential. Validated keys are isolated using a server-keyed fingerprint; each key has its own connection.",
+          : "Supply the Self Healing account API key returned by provisionAccount as a bearer credential.",
         operation.description,
         operation.implemented
           ? ""
@@ -98,7 +98,7 @@ export function getOpenApiSpec() {
       title: "Self Healing API",
       version: "0.1.0",
       description:
-        "Factories authenticate with their Subtext key. The connection API provisions one QA project per validated key and mediates session ingestion, reviews and daily reports. QA accesses Subtext through Self Healing. Legacy project provider operations remain explicit 501 contracts. Retry connection and session requests with identical bodies.",
+        "Factories provision with a Subtext key, then authenticate with the returned Self Healing account key. Each account has a dedicated QA identity. The connection API provisions one QA project per account and mediates session ingestion, reviews and daily reports. QA accesses Subtext through Self Healing. Legacy project provider operations remain explicit 501 contracts. Retry connection and session requests with identical bodies.",
     },
     servers: [{ url: "/" }],
     paths,
@@ -108,7 +108,7 @@ export function getOpenApiSpec() {
           type: "http",
           scheme: "bearer",
           description:
-            "Your Subtext API key. Keep it server-side; never embed it in browser monitoring.",
+            "Your Self Healing account API key. Keep it server-side; never embed it in browser monitoring.",
         },
       },
     },

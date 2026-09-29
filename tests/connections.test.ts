@@ -12,7 +12,11 @@ const settings = { name: "Example", production_url: "https://example.com" };
 const sessionUrl = "https://app.fullstory.com/ui/org/session/1";
 async function fixture() {
   const db = new PGlite();
-  for (const name of ["002_connections.sql", "003_session_coordination.sql"])
+  for (const name of [
+    "002_connections.sql",
+    "003_session_coordination.sql",
+    "004_accounts.sql",
+  ])
     await db.exec(
       await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"),
     );
@@ -349,6 +353,16 @@ test("connection responses hide internal credentials and QA transport uses exist
     const handle = createHandler({
       authenticate: async () => ({ accountId: f.account }),
       connections: () => f.service,
+      accounts: () => ({
+        credentials: async () => ({
+          subtextKey: "customer-key",
+          qaToken: "qa-token",
+        }),
+        authenticate: async () => ({ accountId: f.account }),
+        provisionAccount: async () => {
+          throw new Error("not used");
+        },
+      }),
     });
     const request = (method: string, body?: unknown) =>
       new Request("https://healing.example/api/v1/connection", {

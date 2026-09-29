@@ -250,7 +250,7 @@ const connectionOperations: Operation[] = [
     id: "connect",
     method: "POST",
     path: connectionPath,
-    summary: "Create or recover one QA project for this Subtext key",
+    summary: "Create or recover one QA project for this account",
     implemented: true,
     body: ConnectionInput,
     response: ConnectionResponse,
@@ -322,6 +322,20 @@ const connectionOperations: Operation[] = [
   },
 ];
 export const operations: Operation[] = [
+  {
+    id: "provisionAccount",
+    method: "POST",
+    path: "/api/v1/accounts",
+    public: true,
+    implemented: true,
+    summary: "Provision an account with a dedicated QA identity",
+    description:
+      "Validate a Subtext key and return a Self Healing API key. Repeat with the same Subtext key to recover the same account and API key. All subsequent requests use the returned API key.",
+    body: z
+      .object({ subtext_api_key: z.string().min(1).max(4096).regex(/^\S+$/) })
+      .strict(),
+    response: z.object({ account_id: Id, api_key: z.string() }),
+  },
   ...connectionOperations,
   {
     id: "health",

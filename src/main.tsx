@@ -75,8 +75,8 @@ function App() {
             </a>
           </div>
           <p className="preview-note">
-            Connect a Subtext key to a QA project, send captured sessions, and
-            retrieve reviews and daily behavior reports.
+            Provision an account, connect its QA project, send captured
+            sessions, and retrieve reviews and daily behavior reports.
           </p>
         </section>
         <section className="flow" aria-label="How self healing works">
@@ -134,9 +134,9 @@ function App() {
             <li>
               <h3>Configure your account and key</h3>
               <p>
-                Use your Subtext account and API key. Your factory sends that
-                same key to Self Healing; no additional application key is
-                needed. Keep it in your factory’s secret store.
+                POST your Subtext key to /api/v1/accounts. Store the returned
+                Self Healing API key in your factory’s secret store and use it
+                for subsequent calls. Each account gets a dedicated QA identity.
               </p>
             </li>
             <li>
@@ -181,22 +181,22 @@ function App() {
             <div>
               <h3>Connect your key</h3>
               <p>
-                Use your deployed service URL and your Subtext API key. Discover
-                request and response schemas in OpenAPI.
+                Use your deployed service URL and your Self Healing account API
+                key. Discover request and response schemas in OpenAPI.
               </p>
               <a href="/api/v1/skills/operate-self-healing/SKILL.md">
                 Read the operation skill ↗
               </a>
             </div>
             <pre>
-              <code>{`curl "$SELF_HEALING_URL/api/v1/connection" \\\n  -H "Authorization: Bearer $SUBTEXT_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "name": "My app",\n    "production_url": "https://app.example.com"\n  }'`}</code>
+              <code>{`curl "$SELF_HEALING_URL/api/v1/connection" \\\n  -H "Authorization: Bearer $SELF_HEALING_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "name": "My app",\n    "production_url": "https://app.example.com"\n  }'`}</code>
             </pre>
           </div>
           <p className="contract-note">
-            The connection API requires QA callback support and server credentials to
-            be configured. Session reviews and daily reports run in QA; all
-            Subtext access goes through Self Healing. The broader fix,
-            event-stream, and notification APIs remain planned and return{" "}
+            The connection API requires QA callback support and server
+            credentials to be configured. Session reviews and daily reports run
+            in QA; all Subtext access goes through Self Healing. The broader
+            fix, event-stream, and notification APIs remain planned and return{" "}
             <code>501 not_implemented</code>.
           </p>
         </section>

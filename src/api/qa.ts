@@ -15,17 +15,17 @@ export function qaClient(env = process.env, request: typeof fetch = fetch) {
       "qa_unavailable",
       "REPLAY_QA_URL must be an HTTPS origin.",
     );
-  if (!env.REPLAY_QA_API_TOKEN)
-    throw new HttpError(
-      503,
-      "qa_unavailable",
-      "QA service credentials are not configured.",
-    );
   return async (
     path: string,
     body?: unknown,
     token = env.REPLAY_QA_API_TOKEN,
   ): Promise<unknown> => {
+    if (!token)
+      throw new HttpError(
+        503,
+        "qa_unavailable",
+        "QA credentials are not configured.",
+      );
     if (!path.startsWith("/api/") || path.startsWith("//"))
       throw new Error("Invalid QA API path");
     let response: Response;

@@ -34,11 +34,7 @@ export function connectionService(
       [account],
     );
     if (!row)
-      throw new HttpError(
-        404,
-        "not_connected",
-        "Connect this Subtext key first.",
-      );
+      throw new HttpError(404, "not_connected", "Connect this account first.");
     return Row.parse(row);
   };
   const result = (c: Connection) => ({
@@ -62,7 +58,7 @@ export function connectionService(
         [
           randomUUID(),
           account,
-          vault.encrypt(key, account),
+          vault.encrypt(key, vault.identity(key)),
           input.name,
           input.production_url,
         ],
@@ -72,7 +68,7 @@ export function connectionService(
         throw new HttpError(
           409,
           "already_connected",
-          "This key has different project settings.",
+          "This account has different project settings.",
         );
       if (c.ready) return result(c);
       const lease = randomUUID();
@@ -259,7 +255,7 @@ export function connectionService(
     callback: sessions.callback,
   };
 }
-export function getConnectionService() {
+export function getConnectionService(qaToken?: string) {
   if (!process.env.DATABASE_URL)
     throw new HttpError(
       503,
@@ -267,5 +263,8 @@ export function getConnectionService() {
       "Database is not configured.",
     );
   const sql = neon(process.env.DATABASE_URL);
-  return connectionService(async (text, values) => await sql(text, values));
+  return connectionService(
+    async (text, values) => await sql(text, values),
+    qaClient({ ...process.env, REPLAY_QA_API_TOKEN: qaToken }),
+  );
 }

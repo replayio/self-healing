@@ -211,8 +211,8 @@ export function sessionService(
       if (!vault.verifyGateway(id, token))
         throw new HttpError(401, "unauthorized", "Invalid session callback.");
       const [row] = await query(
-        `SELECT s.*, c.account_id, c.encrypted_key FROM sessions s
-        JOIN connections c ON c.id=s.connection_id WHERE s.id=$1`,
+        `SELECT s.*, c.account_id, c.encrypted_key, COALESCE(a.subtext_fingerprint, c.account_id) AS credential_binding FROM sessions s
+        JOIN connections c ON c.id=s.connection_id LEFT JOIN accounts a ON a.id::text=c.account_id WHERE s.id=$1`,
         [id],
       );
       if (!row)
@@ -220,10 +220,11 @@ export function sessionService(
       const session = Session.extend({
         account_id: z.string(),
         encrypted_key: z.string(),
+        credential_binding: z.string(),
       }).parse(row);
       return gatewayRequest(
         request,
-        vault.decrypt(session.encrypted_key, session.account_id),
+        vault.decrypt(session.encrypted_key, session.credential_binding),
         body,
         { sessionId: id, sessionUrl: session.session_url, query, vault },
         fetcher,

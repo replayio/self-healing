@@ -1,9 +1,9 @@
 ---
 name: operate-self-healing
-description: Operate Self Healing's session reviews and daily reports through its Subtext-key-authenticated API.
+description: Operate Self Healing's session reviews and daily reports through its account-key-authenticated API.
 ---
 
-Always call Self Healing with the customer's Subtext bearer key from a server-side secret store. Never give this key to QA, the browser, or logs.
+Always call Self Healing with the account API key returned by provisionAccount, from a server-side secret store. The Subtext key is supplied only during provisioning. Never give either key to QA, the browser, or logs.
 
 - GET `/api/v1/connection` to check provisioning. Retry the original POST after interrupted provisioning; do not invent a replacement key/project.
 - POST `/api/v1/connection/sessions` for versioned auxiliary batches, followed by a durable completion request after all uploads succeed. Keep retries byte-equivalent where practical and preserve event IDs. Completion seals the session. See the setup skill for capture requirements.
