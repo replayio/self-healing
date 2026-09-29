@@ -69,17 +69,37 @@ cannot establish that a multi-page FullStory session has ended.
 The source of truth is `packages/capture/src` in `replayio/self-healing`. Changes to producers belong
 here. QA owns its independent ingestion schemas and compatibility tests, not another installer copy.
 
-From the repository root:
+GitHub Actions owns publishing through `.github/workflows/publish-capture.yml`. A push to `main`
+that changes the package triggers the workflow; it can also be run manually with **Publish capture
+package → Run workflow → main**. It tests, builds, packs, and publishes the manifest's version.
+Already-published versions are skipped, so rerunning is safe. Registry/authentication errors fail
+rather than being mistaken for a missing version.
+
+For a release, update the version in `package.json` and the emitted producer metadata, update the
+root lockfile, and merge. The producer test checks that the metadata matches the manifest. Installers
+receive updates through their normal dependency upgrades and lockfiles.
+
+### One-time npm authorization
+
+For the initial release, the repository can use a GitHub Actions secret named `NPM_TOKEN` with
+permission to publish under `@replayio` (including creating this new package). A CI token must support
+noninteractive publishing under the npm account's policy. GitHub access alone does not grant npm access.
+
+Once the package exists, configure its npm trusted publisher with:
+
+- GitHub organization: `replayio`
+- Repository: `self-healing`
+- Workflow filename: `publish-capture.yml`
+- Allow direct publishing; no GitHub environment name
+
+Then remove `NPM_TOKEN`; the workflow uses GitHub OIDC. It runs only from `main` on GitHub-hosted runners.
+See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+
+For a local test of the artifact (no publish):
 
 ```sh
 npm ci
 npm test
 npm run build
 npm pack --workspace @replayio/self-healing-capture --pack-destination /tmp
-# After review, with npm publishing access to @replayio:
-npm publish --workspace @replayio/self-healing-capture --access public
 ```
-
-Version 0.1.0 must be published before deploying installer instructions that require it. A PR/build
-alone does not publish to npm. Update the package version and emitted producer version together;
-installers receive updates through normal dependency upgrades and their lockfiles.
