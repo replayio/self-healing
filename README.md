@@ -12,7 +12,7 @@ Start with [Obvious integration and rollout](docs/obvious-integration.md). The o
 
 ## Dashboard
 
-Factories call `POST /api/v1/dashboard-sessions` with their account bearer key and give the returned `url` to the user. Links expire after five minutes and can be used once. The `/dashboard` browser session lasts 24 hours and has read-only access to Overview, Bugs, and Reports. No API key is placed in the browser or URL. See [dashboard behavior and data definitions](docs/dashboard.md).
+Factories call `POST /api/v1/dashboard-sessions` with their account bearer key and give the returned `url` to the user. Links can be opened multiple times until they expire after five minutes. The `/dashboard` browser session lasts 24 hours and has read-only access to Overview, Bugs, and Reports. No API key is placed in the browser or URL. See [dashboard behavior and data definitions](docs/dashboard.md).
 
 ## Daily report delivery
 

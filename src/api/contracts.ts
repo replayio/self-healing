@@ -668,7 +668,7 @@ export const operations: Operation[] = [
     id: "createDashboardSession",
     method: "POST",
     path: "/api/v1/dashboard-sessions",
-    summary: "Create a single-use dashboard launch link",
+    summary: "Create a dashboard launch link",
     implemented: true,
     response: z.object({
       url: HttpsUrl,
@@ -676,7 +676,7 @@ export const operations: Operation[] = [
       session_ttl_seconds: z.literal(86400),
     }),
     description:
-      "Call server-side with the account bearer key. The link expires in five minutes, is single-use, and establishes a read-only browser session lasting 24 hours. Do not publish launch links; request a fresh one when needed.",
+      "Call server-side with the account bearer key. The link can be opened multiple times for five minutes. Each opening establishes a read-only browser session lasting 24 hours. Do not publish launch links; request a fresh one when needed.",
   },
   {
     id: "redeemDashboardSession",
@@ -688,7 +688,7 @@ export const operations: Operation[] = [
     body: z.object({ ticket: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
     response: z.object({ ok: z.literal(true) }),
     description:
-      "Browser-only exchange. Requires the same Origin as this service. Consumes the ticket and sets a Secure, HttpOnly, SameSite=Lax cookie.",
+      "Browser-only exchange. Requires the same Origin as this service. Creates an independent browser session and sets a Secure, HttpOnly, SameSite=Lax cookie without consuming the link.",
   },
   {
     id: "logoutDashboard",
