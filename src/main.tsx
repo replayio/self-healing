@@ -212,8 +212,8 @@ function App() {
               <h3>Verify a real session</h3>
               <p>
                 The agent connects the project, installs session capture and
-                auxiliary-event forwarding, then checks a completed session’s QA
-                review. Daily reports follow through the same API.
+                auxiliary-event forwarding, then confirms Self Healing receives the
+                application’s real session captures.
               </p>
             </li>
           </ol>

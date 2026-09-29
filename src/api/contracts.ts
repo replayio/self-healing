@@ -333,7 +333,7 @@ export const agentSkills = [
     id: "setup-self-healing",
     name: "Set up Self Healing",
     description:
-      "Provision an account, connect this project, install session capture, and verify the first review.",
+      "Provision an account, connect this project, install session capture, and verify delivery of real session captures to Self Healing.",
     path: "/api/v1/skills/setup-self-healing/SKILL.md",
   },
   {
