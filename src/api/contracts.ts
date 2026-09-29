@@ -271,11 +271,16 @@ const connectionOperations: Operation[] = [
       "Register a session and upload auxiliary data through Self Healing",
     implemented: true,
     description:
-      "Use a server-side capture proxy. Retry failed uploads with identical event IDs. Set complete only after all uploads finish; completed sessions are immutable. QA validates the versioned artifact schemas.",
+      "Use a server-side capture proxy. Retry failed uploads with identical event IDs. QA automatically schedules reviews after 15 minutes without new uploads, on its next 15-minute scheduler tick. Uploads do not seal sessions. The legacy complete field is ignored. QA validates the versioned artifact schemas.",
     body: object({
       session_url: Url,
       auxiliary_data: z.array(AuxiliaryArtifact).max(10).default([]),
-      complete: z.boolean().default(false),
+      complete: z
+        .boolean()
+        .default(false)
+        .describe(
+          "Deprecated; ignored. Reviews are scheduled automatically after upload inactivity.",
+        ),
     }),
     response: z
       .object({ session_id: z.string(), status: z.string() })
@@ -333,7 +338,7 @@ export const agentSkills = [
     id: "operate-self-healing",
     name: "Operate Self Healing",
     description:
-      "Submit completed sessions, read reviews and daily reports, and handle retries and blocked work.",
+      "Forward session captures, read automatic reviews and daily reports, and handle retries and blocked work.",
     path: "/api/v1/skills/operate-self-healing/SKILL.md",
   },
 ] as const;

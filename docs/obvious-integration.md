@@ -59,7 +59,9 @@ All application installation instructions live in the [setup skill](../public/ap
 
 Batches are limited to 256 KiB including the UTF-8 encoded envelope. The package splits arrays between whole events and retries identical batches internally. It reports a single oversized event as an error without silently truncating it. QA's existing schema and aggregate limits apply (5,000 network exchanges/interactions, 10 MB per artifact). Supported namespace/key pairs are `network/captured-exchanges`, `interaction/captured-interactions`, `session/metrics`, `session/identity`, and `session/capture-context`, all version 1. QA remains the artifact store; Self Healing owns the external interface and forwards validated uploads. The producer defines the captured fields; preserve the application's existing capture policy. This API adds no field-redaction requirement. This is not a zero-data-retention path.
 
-The capture package does not signal whole-session completion, and Self Healing does not detect it automatically. An unattended integration still needs a mechanism to establish that the session has ended and all uploads have succeeded. For a controlled verification session, stop recording after uploads finish. After the session ends and all auxiliary batches have succeeded, send the same session URL with `auxiliary_data: []` and `complete: true`. The server proxy must persist and retry this finalization request; browser unload alone is not reliable. Self Healing seals the session locally and requests goals/outcomes and friction/recovery reviews through QA’s existing reviewer API. Automatic reviewer sampling is disabled for these projects so reviews start after completion; friction/recovery is configured to request journeys. Retry an identical batch or completion after transport errors; durable receipts recover the prior result. Different uploads to a sealed session return 409. Completion does not mean review success: review work is asynchronous and may be quota- or credit-blocked. Friction reviews can request reproduction journeys using QA's existing settings.
+QA's existing automatic reviewers are enabled with 100% sampling and a 15-minute upload quiet period. Its scheduler checks every 15 minutes and queues one automatic run per session/reviewer. Successful registrations update QA's last-received timestamp; identical uploads served from Self Healing's receipt cache do not postpone processing. Inactivity makes a session eligible for review, not permanently complete. New uploads remain accepted subject to QA's existing artifact and journey immutability rules. The legacy `complete` input is accepted but ignored; Self Healing no longer seals sessions or makes manual review requests during ingestion.
+
+Goals/outcomes and friction/recovery reviews use the same scoped Subtext callbacks as before. Friction/recovery may request reproduction journeys. QA's normal credit/project capacity still applies.
 
 This initial path is **push ingestion**: the app/proxy reports session URLs. Merely providing a key does not install browser capture or discover historical sessions. A Subtext session-discovery poller and backfill remain follow-up work.
 
@@ -98,6 +100,19 @@ Each callback is `POST /api/internal/sessions/{id}/subtext/{opaque_token}`. It a
 
 Only MCP initialization, tool listing, and the four review tools reach the fixed Subtext endpoint. Redirects are disabled. JSON and SSE MCP envelopes are supported, with a 32 MiB response limit. Evidence is buffered transiently for validation and forwarded, never persisted here. Neither service should log callback URLs. QA #4902 omits credential-bearing registration/task-spec payloads from backend request recordings.
 
-Requests are synchronous handoffs with durable metadata. Obvious’s server must retry incomplete setup, uploads, and completion after failures; there is no Self Healing background retry worker. Review retries use a stable QA request UUID. Because QA reports both quota refusal and duplicate requests as `not_queued`, Self Healing checks that a review for the submitted session exists before acknowledging completion. Reports use QA’s existing daily scheduler.
+Requests are synchronous handoffs with durable metadata. The application retries failed setup and uploads. QA owns periodic review scheduling, duplicate prevention, quota checks, and daily report generation; there is no separate Self Healing scheduler or completion worker.
 
-Acceptance before enabling customer traffic: connect a real key twice and see one QA project; upload a real session with captured network events; complete it and obtain a real review; obtain a report for a completed day. Verify QA's worker endpoint points to Self Healing and no provider credential reaches QA. Automated tests use mocked providers and do not establish live Subtext compatibility or account billing readiness.
+Acceptance before enabling customer traffic: connect a real key twice and see one QA project; upload a real session with captured network events; let uploads go quiet and obtain an automatically scheduled review; obtain a report for a completed day. Verify QA's worker endpoint points to Self Healing and no provider credential reaches QA. Automated tests use mocked providers and do not establish live Subtext compatibility or account billing readiness.
+
+## Automatic-review rollout
+
+Production deployment runs `scripts/enable-session-reviews.ts` after publishing and smoke checks. It
+uses each provisioned account's encrypted QA credential to enable the two existing reviewers on ready
+connections. Partial failures fail deployment and are safe to retry; already-enabled settings retain
+QA's activation window. Repeating connection setup also reconciles review settings without creating a
+project or rotating its ingestion token. No schema change or capture-package release is required.
+
+QA's existing activation policy applies to sessions first registered after automatic reviews were
+enabled. This rollout does not backfill sessions registered before that point; historical session
+backfill is separate from automatic processing of newly captured sessions. Previously stored sealed
+flags and completion receipts remain readable, but uploads no longer create or enforce local seals.

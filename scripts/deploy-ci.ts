@@ -50,6 +50,10 @@ async function deploy() {
     if (!response.ok || !(await response.text()).includes(expected!))
       throw new Error(`Smoke check failed: ${path}`);
   }
+  run(["--import", "tsx", "scripts/enable-session-reviews.ts"]);
+  console.log(
+    "Enabled automatic reviews for existing provisioned connections.",
+  );
   const protectedResponse = await fetch(origin + "/api/v1/projects", {
     signal: AbortSignal.timeout(30_000),
   });

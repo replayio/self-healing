@@ -40,7 +40,7 @@ Neon stores project metadata and version-independent configuration documents. Ev
 
 Each account owns its local configuration and one QA connection. The account's QA token is used for project setup, review requests, and reports. The deployment's privileged QA credential is used only for provisioning. Customer session payloads are forwarded to QA. Session-scoped callbacks authenticate QA to Self Healing, which retrieves the retained Subtext credential; QA never receives that credential.
 
-See [the connection protocol](obvious-integration.md) for provisioning recovery, capture batching, completion receipts, report scheduling and rollout. QA #4902 adds optional session-source callbacks; existing projects need no migration or configuration change. The retained encrypted credential is an intentional extension of the original reference-only secret design to support unattended processing.
+See [the connection protocol](obvious-integration.md) for provisioning recovery, capture batching, upload receipts and automatic reviews, report scheduling and rollout. QA #4902 adds optional session-source callbacks; existing projects need no migration or configuration change. The retained encrypted credential is an intentional extension of the original reference-only secret design to support unattended processing.
 
 ## Provider implementation roadmap
 
