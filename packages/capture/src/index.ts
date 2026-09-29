@@ -605,8 +605,9 @@ export function initCapture(options: CaptureOptions): CaptureController {
     },
   };
   active = controller;
-  activeOptions = options;
+  activeOptions = { ...options };
   init({ orgId }, async ({ sessionUrl }) => {
+    if (stopped && currentSession.sessionUrl !== null) return;
     const session = synchronizeSession(sessionUrl);
     const firstStart = !fullStoryReady;
     fullStoryReady = true;

@@ -452,5 +452,15 @@ const UploadSchema = z.object({
     );
     await assert.rejects(capture.stop(), /Capture upload failed/);
     assert.equal(listeners.size, 0);
+    await callbacks.ready({
+      sessionUrl: "https://app.fullstory.com/session/after-stop",
+    });
+    await fakeWindow.fetch("https://example.test/after-stop");
+    await flush();
+    assert.equal(
+      uploads.length,
+      uploadCount,
+      "stop must not register later SDK sessions",
+    );
   });
 }
