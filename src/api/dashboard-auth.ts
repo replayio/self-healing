@@ -73,7 +73,8 @@ export function dashboardAuth(
     async redeem(ticket: string) {
       const session = token();
       const rows = await query(
-        `UPDATE dashboard_sessions SET token_hash=$2,kind='browser',expires_at=now()+interval '24 hours'
+        `INSERT INTO dashboard_sessions(token_hash,account_id,kind,expires_at)
+        SELECT $2,account_id,'browser',now()+interval '24 hours' FROM dashboard_sessions
         WHERE token_hash=$1 AND kind='launch' AND expires_at > now() RETURNING account_id`,
         [hash(ticket), hash(session)],
       );
@@ -81,7 +82,7 @@ export function dashboardAuth(
         throw new HttpError(
           401,
           "expired_link",
-          "This dashboard link has expired or was already used. Request a new link from your factory.",
+          "This dashboard link has expired. Request a new link from your factory.",
         );
       return session;
     },

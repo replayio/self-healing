@@ -49,7 +49,7 @@ async function fixture() {
 const cookieRequest = (token: string) =>
   new Request(origin, { headers: { cookie: `${DASHBOARD_COOKIE}=${token}` } });
 
-test("dashboard links expire, rotate atomically once, and persist only hashes", async () => {
+test("dashboard links open independent browser sessions without consumption or expiry extension", async () => {
   const f = await fixture();
   try {
     const link = await f.auth.launch(account);
@@ -65,12 +65,35 @@ test("dashboard links expire, rotate atomically once, and persist only hashes", 
     );
     assert.ok(!stored.includes(ticket));
     await assert.rejects(f.auth.authenticate(cookieRequest(ticket)), HttpError);
-    const results = await Promise.allSettled([
+    const [token, second] = await Promise.all([
       f.auth.redeem(ticket),
       f.auth.redeem(ticket),
     ]);
-    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
-    const token = results.find((r) => r.status === "fulfilled")!.value;
+    assert.notEqual(token, second);
+    assert.deepEqual(await f.auth.authenticate(cookieRequest(second)), {
+      accountId: account,
+    });
+    const [launch] = await f.query(
+      "SELECT expires_at FROM dashboard_sessions WHERE kind='launch'",
+      [],
+    );
+    assert.equal(
+      (launch!.expires_at as Date).toISOString(),
+      link.expires_at,
+    );
+    await f.auth.logout(cookieRequest(second));
+    await assert.rejects(f.auth.authenticate(cookieRequest(second)), HttpError);
+    await assert.rejects(f.auth.redeem(token), HttpError);
+    const third = await f.auth.redeem(ticket);
+    assert.deepEqual(await f.auth.authenticate(cookieRequest(third)), {
+      accountId: account,
+    });
+    await f.query(
+      "UPDATE dashboard_sessions SET expires_at=now()-interval '1 second' WHERE kind='launch'",
+      [],
+    );
+    await assert.rejects(f.auth.redeem(ticket), HttpError);
+    // Link expiry and another browser's logout do not end this browser session.
     assert.ok(
       !JSON.stringify(
         await f.query("SELECT * FROM dashboard_sessions", []),
@@ -85,7 +108,7 @@ test("dashboard links expire, rotate atomically once, and persist only hashes", 
       HttpError,
     );
     const [duration] = await f.query(
-      "SELECT EXTRACT(EPOCH FROM expires_at-now()) AS seconds FROM dashboard_sessions",
+      "SELECT EXTRACT(EPOCH FROM expires_at-now()) AS seconds FROM dashboard_sessions WHERE kind='browser'",
       [],
     );
     assert.ok(Number(duration!.seconds) > 86390);

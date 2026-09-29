@@ -133,10 +133,6 @@ For separately requested ongoing operation, read `/api/v1/skills/operate-self-he
 
 ## Open the dashboard
 
-When setup is complete, call `POST /api/v1/dashboard-sessions` server-side with the Self Healing account bearer key (no body required). Open the returned `url` for the user in the way most appropriate to your environment: use a user-visible browser tab or app navigation tool when available. If you cannot open it directly, present a clickable **Open dashboard** link in your completion message. Do not wait for the user to ask.
-
-Generate the link immediately before this handoff, rather than storing it in project configuration. Open it in the user's browser context; do not consume the single-use link in a private automation browser before handing it to them.
-
-The link is single-use and expires after five minutes. Opening it establishes a read-only browser session for 24 hours. The account key stays in the factory's secret store; do not put it in a URL or browser code. If the link was already used or expired, create another. Opening a link for a different project switches the dashboard to that project's resources in that browser.
+When setup is complete, call `POST /api/v1/dashboard-sessions` with the server-side account key and open the returned `url` for the user in the most appropriate way available. If you cannot open it directly, provide a clickable **Open dashboard** link. Generate a fresh link for the handoff; if it expires before the user opens it, request another. Keep the account key server-side.
 
 The dashboard has Overview, Bugs, and Reports tabs. Overview shows bug counts and daily session activity; Bugs links to existing QA bug reports; Reports lets the user cycle through daily reports. No separate signup is needed. The QA report links use QA's existing access rules.
