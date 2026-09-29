@@ -28,7 +28,7 @@ Self Healing validates Subtext only during provisioning. Later requests look up 
 
 ## Capture and auxiliary events
 
-Install `@replayio/self-healing-capture` and `@fullstory/browser` in the user's app. The [capture package](../packages/capture/README.md) owns auxiliary event generation; call `initCapture({orgId, endpoint: '/api/self-healing/session'})` before rendering and `capture.identify(user)` after authentication. Its same-origin server route forwards to `POST /api/v1/connection/sessions` with the Self Healing account key. Use the app's existing access controls; keep the key server-side. The [setup skill](../public/api/v1/skills/setup-self-healing/SKILL.md) contains the forwarding handler. QA consumes the compatible artifact format without importing the package.
+All application installation instructions live in the [setup skill](../public/api/v1/skills/setup-self-healing/SKILL.md), including the temporary capture package and server forwarding. The package bridges missing Subtext accessors; QA independently consumes the artifact format and exposes configuration through APIs.
 
 ```json
 {
@@ -90,7 +90,7 @@ Self Healing calls QA's existing APIs:
 
 - `POST /api/v1/projects` (also starts QA's normal initial exploration and uses billing capacity).
 - `GET /api/v1/projects` for creation reconciliation.
-- `POST /api/v1/projects/{id}/integrations/fullstory` for the project ingestion token. QA currently embeds the token in installation instructions; the adapter requires exactly one unique `lqs_` token. Setup retries rotate it only while the connection is pending, before sessions are accepted.
+- `POST /api/v1/projects/{id}/integrations/fullstory` for the project ingestion token. The adapter consumes QA’s structured `registration_token`. During rollout it also accepts the old installation-guide response, requiring exactly one unique `lqs_` token. Deploy Self Healing before QA removes that legacy response. Setup retries rotate it only while the connection is pending, before sessions are accepted.
 - `POST /api/project-session/register` with that ingestion token, auxiliary data, and `source_callback_url`.
 - `/api/project-session-reviewers` and `/api/project-session-summarizers` for settings, requests, and results.
 

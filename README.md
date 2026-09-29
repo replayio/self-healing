@@ -12,7 +12,7 @@ Start with [Obvious integration and rollout](docs/obvious-integration.md). The o
 
 ## Capture package
 
-[`@replayio/self-healing-capture`](packages/capture/README.md) is the source of truth for browser auxiliary-event capture. Installers use its API; QA consumes its versioned artifacts without importing it. See the package README for release instructions.
+All installation instructions live in the [Self Healing setup skill](public/api/v1/skills/setup-self-healing/SKILL.md). [`@replayio/self-healing-capture`](packages/capture/README.md) temporarily supplies auxiliary capture until Subtext has the required accessors. QA consumes compatible artifacts without importing the package; session configuration is API-only. See the package README for contributor release instructions.
 
 ## Local development
 
@@ -32,7 +32,7 @@ Provision with a **Subtext API key** using `POST /api/v1/accounts` (`provisionAc
 
 ## Factory quick start
 
-Copy the setup prompt from the landing page into Obvious or another coding agent:
+Copy the setup prompt from the landing page into a factory or coding agent:
 
 > Read the API at https://self-healing.replay.io/api/v1 and follow its setup skill to set up Self Healing for this project.
 
