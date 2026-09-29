@@ -56,3 +56,9 @@ Long-running provider work belongs in a durable queue/worker, not a Netlify requ
 ## Remaining production work
 
 This setup has QA and Subtext adapters, but no automatic session discovery, Self Healing background retry worker, delivery integrations, automatic GitHub PR creation, account self-service, rate limiting, or production observability. The factory owns PR authoring, so automatic PR creation is not required inside this service. The Netlify site and Neon database are provisioned. The Infisical/GitHub machine-identity configuration remains an operator setup step. Health reports process liveness only.
+
+## Dashboard
+
+The dashboard uses the existing account-to-connection scope and dedicated QA credential. A factory exchanges its bearer key for a five-minute, single-use launch ticket. The browser exchanges that ticket for a 24-hour Secure/HttpOnly cookie; cookie authentication is accepted only by the read-only dashboard routes, never by connection/configuration APIs or launch-link creation. See [dashboard.md](dashboard.md) for data definitions and rollout.
+
+Migration `005_dashboard_sessions.sql` adds hashed, expiring launch/browser tokens. Atomic token rotation provides single-use redemption across Netlify instances. This table stores authentication metadata only; dashboard queries read QA directly and do not persist reports or session contents.

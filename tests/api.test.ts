@@ -354,7 +354,11 @@ test("OpenAPI describes every operation, implementation status, authentication, 
     assert.equal(documented.operationId, operation.id);
     assert.deepEqual(
       documented.security,
-      operation.public ? [] : [{ bearerAuth: [] }],
+      operation.public
+        ? []
+        : operation.dashboard
+          ? [{ dashboardCookie: [] }, { bearerAuth: [] }]
+          : [{ bearerAuth: [] }],
     );
     assert.ok(
       documented.responses[String(operation.status ?? 200)].content[

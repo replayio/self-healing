@@ -14,3 +14,11 @@ Always call Self Healing with the account API key returned by provisionAccount, 
 - Retry 409 busy uploads and 503 transport failures with the same body and backoff. QA may reject auxiliary changes once reproduction journey creation starts; surface that error rather than reporting a successful capture. Read error codes and stored results.
 
 QA performs reviews and scheduled summarization, but all provider access goes through Self Healing. No session-discovery poller, historical backfill, email/Slack delivery, key-rotation endpoint, automatic fix-PR loop or durable factory event feed is implemented by this slice. The corresponding legacy project routes are explicit 501 contracts. Do not manufacture successful results.
+
+## Open the dashboard
+
+To let the user view this project's activity, call `POST /api/v1/dashboard-sessions` server-side with the Self Healing account bearer key (no body required). Return the response's `url` to the user as an **Open dashboard** link. Request it when the user wants to open the dashboard, rather than storing it in project configuration.
+
+The link is single-use and expires after five minutes. Opening it establishes a read-only browser session for 24 hours. The account key stays in the factory's secret store; do not put it in a URL or browser code. If the link was already used or expired, create another. Opening a link for a different project switches the dashboard to that project's resources in that browser.
+
+The dashboard has Overview, Bugs, and Reports tabs. Overview shows bug counts and daily session activity; Bugs links to existing QA bug reports; Reports lets the user cycle through daily reports. No separate signup is needed. The QA report links use QA's existing access rules.

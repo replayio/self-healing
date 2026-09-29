@@ -199,6 +199,7 @@ export interface Operation {
   summary: string;
   implemented: boolean;
   public?: boolean;
+  dashboard?: boolean;
   body?: z.ZodTypeAny;
   query?: z.ZodTypeAny;
   response: z.ZodTypeAny;
@@ -361,7 +362,157 @@ const Discovery = z.object({
   authentication: z.string(),
 });
 
+// Dashboard contracts are shared by the handler, browser, and OpenAPI.
+export const DashboardDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(
+    (day) =>
+      Number.isFinite(Date.parse(`${day}T00:00:00Z`)) &&
+      new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) === day,
+    "Use a valid calendar date",
+  );
+const Count = z.number().int().nonnegative();
+export const DashboardBug = z.object({
+  id: z.string(),
+  title: z.string(),
+  severity: z.string(),
+  status: z.string(),
+  discovered_at: z.string(),
+  url: HttpsUrl,
+});
+export const DashboardOverview = z.object({
+  name: z.string(),
+  open_bugs: Count,
+  closed_bugs: Count,
+  new_open_bugs: Count,
+  sessions: Count,
+  days: z.array(
+    z.object({
+      day: DashboardDay,
+      sessions: Count,
+      reviewed_sessions: Count,
+      bug_sessions: Count,
+      serious_sessions: Count,
+      both_sessions: Count,
+    }),
+  ),
+});
+export const DashboardBugs = z.object({
+  items: z.array(DashboardBug),
+  total: Count,
+  page: Count,
+  has_more: z.boolean(),
+});
+export const DashboardReports = z.object({
+  older: DashboardDay.nullable(),
+  newer: DashboardDay.nullable(),
+  latest_attempt: z
+    .object({ day: DashboardDay, status: z.string() })
+    .nullable(),
+  run: z
+    .object({
+      day: DashboardDay,
+      status: z.string(),
+      timezone: z.string(),
+      sessions: Count.nullable(),
+      reviewed_sessions: Count.nullable(),
+      output: z
+        .object({
+          overview: z.string(),
+          findings: z.array(
+            z.object({
+              category: z.enum(["User trends", "Friction", "New bugs"]),
+              title: z.string().optional(),
+              text: z.string(),
+              bugs: z.array(DashboardBug),
+            }),
+          ),
+        })
+        .nullable(),
+      bugs: z.array(
+        DashboardBug.extend({
+          is_duplicate: z.boolean(),
+          impacted_sessions: Count.nullable(),
+        }),
+      ),
+    })
+    .nullable(),
+});
+
 export const operations: Operation[] = [
+  {
+    id: "createDashboardSession",
+    method: "POST",
+    path: "/api/v1/dashboard-sessions",
+    summary: "Create a single-use dashboard launch link",
+    implemented: true,
+    response: z.object({
+      url: HttpsUrl,
+      expires_at: Timestamp,
+      session_ttl_seconds: z.literal(86400),
+    }),
+    description:
+      "Call server-side with the account bearer key. The link expires in five minutes, is single-use, and establishes a read-only browser session lasting 24 hours. Do not publish launch links; request a fresh one when needed.",
+  },
+  {
+    id: "redeemDashboardSession",
+    method: "POST",
+    path: "/api/v1/dashboard/redeem",
+    public: true,
+    summary: "Exchange a launch ticket for a browser cookie",
+    implemented: true,
+    body: z.object({ ticket: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+    response: z.object({ ok: z.literal(true) }),
+    description:
+      "Browser-only exchange. Requires the same Origin as this service. Consumes the ticket and sets a Secure, HttpOnly, SameSite=Lax cookie.",
+  },
+  {
+    id: "logoutDashboard",
+    public: true,
+    description:
+      "Same-origin browser-only logout; deletes the current cookie session if present and clears the cookie. Idempotent when already signed out.",
+    method: "POST",
+    path: "/api/v1/dashboard/logout",
+    dashboard: true,
+    summary: "End the current dashboard browser session",
+    implemented: true,
+    response: z.object({ ok: z.literal(true) }),
+  },
+  {
+    id: "dashboardOverview",
+    method: "GET",
+    path: "/api/v1/dashboard/overview",
+    dashboard: true,
+    summary: "Read dashboard counts and 30 daily session columns",
+    implemented: true,
+    response: DashboardOverview,
+    description:
+      "All-time bug/session counts; open means open or reopened. Closed means fixed, wontfix, invalid or pr-closed (unconfirmed bugs are excluded). New open bugs were discovered in the last 24 hours. UTC daily buckets use QA session first-received time. Bug shares use confirmed QA reviewer-associated bugs; serious means the friction reviewer recorded impact=blocked. Sessions with no review are not evidence of success.",
+  },
+  {
+    id: "dashboardBugs",
+    method: "GET",
+    path: "/api/v1/dashboard/bugs",
+    dashboard: true,
+    summary: "List open bugs with QA report links",
+    implemented: true,
+    query: z
+      .object({ page: z.coerce.number().int().min(1).max(100000).default(1) })
+      .strict(),
+    response: DashboardBugs,
+  },
+  {
+    id: "dashboardReports",
+    method: "GET",
+    path: "/api/v1/dashboard/reports",
+    dashboard: true,
+    summary: "Read daily reports and navigate report history",
+    implemented: true,
+    query: z.object({ day: DashboardDay.optional() }).strict(),
+    response: DashboardReports,
+  },
+
   {
     id: "discoverApi",
     method: "GET",

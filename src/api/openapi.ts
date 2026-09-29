@@ -58,7 +58,9 @@ export function getOpenApiSpec() {
       description: [
         operation.public
           ? undefined
-          : "Supply the Self Healing account API key returned by provisionAccount as a bearer credential.",
+          : operation.dashboard
+            ? "Use the read-only dashboard cookie or the account bearer key."
+            : "Supply the Self Healing account API key returned by provisionAccount as a bearer credential.",
         operation.description,
         operation.implemented
           ? ""
@@ -69,7 +71,11 @@ export function getOpenApiSpec() {
       "x-implementation-status": operation.implemented
         ? "implemented"
         : "planned",
-      security: operation.public ? [] : [{ bearerAuth: [] }],
+      security: operation.public
+        ? []
+        : operation.dashboard
+          ? [{ dashboardCookie: [] }, { bearerAuth: [] }]
+          : [{ bearerAuth: [] }],
       parameters,
       ...(operation.body
         ? { requestBody: { required: true, content: content(operation.body) } }
@@ -110,6 +116,12 @@ export function getOpenApiSpec() {
     paths,
     components: {
       securitySchemes: {
+        dashboardCookie: {
+          type: "apiKey",
+          in: "cookie",
+          name: "__Host-sh-dashboard",
+          description: "Read-only, 24-hour dashboard browser session.",
+        },
         bearerAuth: {
           type: "http",
           scheme: "bearer",
