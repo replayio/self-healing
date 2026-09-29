@@ -1,6 +1,6 @@
 ---
 name: setup-self-healing
-description: Guide a coding agent through account provisioning, project connection, session capture, and verification of real QA results.
+description: Guide a coding agent through account provisioning, project connection, session capture, and verification that real user sessions reach Self Healing.
 ---
 
 # Set up Self Healing for this project
@@ -41,7 +41,7 @@ GET `/api/v1/connection` using the account key. If it is connected, reuse its ID
 
 Recover interrupted setup by repeating that exact POST. Save the chosen name and URL in project configuration so retries use identical values. The connection creates one QA project for the account and configures reviews and daily reports. Different settings return 409; do not create a replacement account to bypass this conflict. The older `/api/v1/projects` configuration API is not a substitute for connection provisioning.
 
-A connected response confirms configuration, not a successful review. QA project creation can start initial exploration, and QA work requires credit capacity. Report quota or credit blocks to the user/service operator; do not promise free or unlimited work.
+A connected response confirms configuration; verify session delivery after installing capture. QA project creation can start initial exploration, and QA work requires credit capacity. Report quota or credit blocks to the user/service operator; do not promise free or unlimited work.
 
 ## Install the capture package
 
@@ -118,22 +118,18 @@ The producer sends `{session_url, auxiliary_data}`. Self Healing forwards those 
 
 The package splits batches internally at 256 KiB. An oversized individual event is reported through `onError` and causes `capture.flush()` to reject; report the capture failure. There is no event-fragment API or durable offline queue. Installers do not implement batching or modify captured event fields themselves.
 
-## Automatic reviews
+## Verify session delivery and finish setup
 
-Self Healing enables QA’s goals/outcomes and friction/recovery reviewers when connecting the application. Continue forwarding capture batches normally. QA makes a session eligible after **15 minutes without a new upload** and checks eligible sessions every 15 minutes. Expect the review to be queued roughly 15–30 minutes after the last upload, subject to QA capacity and project status.
+Setup is complete when the deployed application's real session captures are successfully delivered to Self Healing. QA analysis and report generation are Self Healing's responsibility, not installer acceptance checks.
 
-No completion request, recording shutdown, or custom session-ending mechanism is needed. New uploads reset the inactivity timer. QA’s scheduler deduplicates automatic reviews per session and reviewer. This is an inactivity-based review policy, not a claim that FullStory has permanently ended the session. Friction reviews can request reproduction journeys; daily reports use the saved reviews.
+1. Run the target project's relevant tests/build and deploy using its normal workflow and permissions. If deployment requires user action, report that boundary and provide the concrete change for review.
+2. Exercise a real session in the deployed application: make a fetch request, click or enter input, and exercise the existing identity hook if the app has one. Verify that the installed package uploads the resulting session URL and captured artifacts through the application's forwarding route. FullStory recording alone or a hand-crafted metadata-only upload does not verify this path.
+3. Confirm that the forwarding route receives Self Healing's successful response from `POST /api/v1/connection/sessions`: HTTP 200 with `status: "stored"` and a nonempty `session_id`. The route must pass that response back to the package. Verify the uploads containing the exercised network and interaction events succeed, rather than checking only an initial metadata batch. Check that the account key stays server-side and the route uses the app's intended access controls.
+4. Report the deployed integration, the test session URL, and Self Healing's returned session ID and ingestion status. If delivery fails, report the failed request's status/error and fix the capture or forwarding problem before declaring setup complete. Never include API keys or secret callback URLs.
 
-## Verify before declaring setup complete
+Once delivery is verified, declare setup complete. Do not wait for the session to go quiet, poll QA reviewers, or wait for a daily report. Do not schedule those checks as setup follow-ups or hold the setup handoff for them. Continue forwarding capture batches normally; no completion request or recording shutdown is needed.
 
-- Run the target project's relevant tests/build. Exercise a real fetch, click/input, and signed-in identity update; verify the producer sends their artifacts through the local route to Self Healing. Check that the account key stays server-side and the route uses the app's intended access controls.
-- Deploy using the project's normal workflow and permissions. If deployment requires user action, report that boundary and provide the concrete change for review.
-- Submit one real accessible session with captured network and interaction events. Confirm that capture uploads succeed, let that test session go quiet for the scheduling window, then poll `GET /api/v1/connection/reviews?reviewer=friction-and-recovery&page=0` and the `goals-and-outcomes` reviewer. Inspect the actual task state/result; empty results or an accepted request are not proof of a completed review. Use bounded polling/backoff and report outstanding work without resubmitting uploads just to poll (uploads postpone the inactivity window).
-- Daily reports are scheduled at 08:00 UTC for the previous day. The first eligible report covers the connection's setup day and runs the next morning. Read `GET /api/v1/connection/reports?day=YYYY-MM-DD`. The POST report endpoint only reads/awaits the scheduler; it does not force a report immediately. State when a report is not yet eligible instead of fabricating a result.
-
-Report the account and QA project IDs, installed capture/server components, deployment status, first session/review evidence, and any remaining blockers. Never include API keys or secret callback URLs. Distinguish "configured", "review verified", and "first report pending" when appropriate. Do not claim the complete automatic fix factory is active.
-
-For ongoing operation, read `/api/v1/skills/operate-self-healing/SKILL.md`. On 401, check which credential is being used and do not fall back to Subtext bearer authentication. On 429 retry with backoff. On 503 or `provisioning_pending`, preserve IDs and report the operator action needed. On 501, stop that unsupported operation; never invent a replacement provider API.
+For separately requested ongoing operation, read `/api/v1/skills/operate-self-healing/SKILL.md`. On 401, check which credential is being used and do not fall back to Subtext bearer authentication. On 429 retry with backoff. On 503 or `provisioning_pending`, preserve IDs and report the operator action needed. On 501, stop that unsupported operation; never invent a replacement provider API.
 
 ## Open the dashboard
 
