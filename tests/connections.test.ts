@@ -180,52 +180,92 @@ test("concurrent setup is serialized and ambiguous creation never blindly retrie
     await f.db.close();
   }
 });
-test("completion retries recover accepted reviews, never reupload sealed evidence, and preserve tenant isolation", async () => {
+test("uploads rely on automatic QA reviews, stay open, and deduplicate retries", async () => {
   const f = await fixture();
   try {
     await f.service.connect(f.account, "customer-key", settings);
-    const input = {
-      session_url: sessionUrl,
-      auxiliary_data: [],
-      complete: true,
-    };
-    f.loseReview();
-    await assert.rejects(f.service.action(f.account, "session", input));
-    const result = await f.service.action(f.account, "session", input);
-    assert.equal(result.status, "submitted");
+    const configs = f.calls
+      .filter((c) => c.path.startsWith("/api/project-session-reviewers"))
+      .map((c) => c.body);
+    assert.deepEqual(
+      configs,
+      ["goals-and-outcomes", "friction-and-recovery"].map((reviewer) => ({
+        action: "settings",
+        reviewer,
+        settings: {
+          enabled: true,
+          create_journeys: reviewer === "friction-and-recovery",
+          sample_percent: 100,
+          quiet_minutes: 15,
+          max_reviews_per_day: null,
+          max_journeys_per_day: null,
+        },
+      })),
+    );
+    const input = { session_url: sessionUrl, auxiliary_data: [] };
+    const first = await f.service.action(f.account, "session", input);
+    assert.equal(first.status, "stored");
     assert.deepEqual(
       await f.service.action(f.account, "session", input),
-      result,
+      first,
     );
-    assert.equal(f.reviews.size, 2);
     assert.equal(
       f.calls.filter((c) => c.path === "/api/project-session/register").length,
       1,
     );
-    await assert.rejects(
-      f.service.action(f.account, "session", { ...input, complete: false }),
-      /complete/,
+    assert.equal(
+      (
+        await f.service.action(f.account, "session", {
+          ...input,
+          complete: true,
+        })
+      ).status,
+      "stored",
+    );
+    await f.service.action(f.account, "session", {
+      ...input,
+      auxiliary_data: [
+        {
+          namespace: "session",
+          key: "identity",
+          schema_version: 1,
+          payload: { version: 1, email: "user@example.com" },
+        },
+      ],
+    });
+    assert.equal(
+      f.reviews.size,
+      0,
+      "ingestion never queues manual reviews alongside the scheduler",
+    );
+    assert.equal(
+      (await f.query("SELECT sealed FROM sessions", []))[0]?.sealed,
+      false,
     );
     await assert.rejects(f.service.action("other", "session", input));
   } finally {
     await f.db.close();
   }
 });
-test("quota refusal does not report submission; identical completion can retry", async () => {
+
+test("previously sealed sessions accept new captures without installer intervention", async () => {
   const f = await fixture();
   try {
     await f.service.connect(f.account, "customer-key", settings);
-    f.rejectReviews(true);
-    const input = { session_url: sessionUrl, complete: true };
-    await assert.rejects(
-      f.service.action(f.account, "session", input),
-      /not accepted/,
-    );
-    f.rejectReviews(false);
-    assert.equal(
-      (await f.service.action(f.account, "session", input)).status,
-      "submitted",
-    );
+    await f.service.action(f.account, "session", { session_url: sessionUrl });
+    await f.query("UPDATE sessions SET sealed=true", []);
+    const result = await f.service.action(f.account, "session", {
+      session_url: sessionUrl,
+      auxiliary_data: [
+        {
+          namespace: "session",
+          key: "identity",
+          schema_version: 1,
+          payload: { version: 1, email: "later@example.com" },
+        },
+      ],
+    });
+    assert.equal(result.status, "stored");
   } finally {
     await f.db.close();
   }

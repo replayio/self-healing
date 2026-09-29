@@ -5,7 +5,7 @@ network exchanges, interactions, identity, metrics, and session context.
 
 **Installation and integration instructions live in the
 [Self Healing setup skill](https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md).**
-Follow that skill for account provisioning, browser initialization, server forwarding, completion,
+Follow that skill for account provisioning, browser initialization, server forwarding, automatic reviews,
 and verification. This package is an implementation detail of that setup, not a separate installer.
 
 QA consumes compatible versioned artifacts and recognizes the package/version provenance. Its

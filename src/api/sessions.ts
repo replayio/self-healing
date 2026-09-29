@@ -94,12 +94,6 @@ export function sessionService(
           .parse(receipt);
         if (prior?.result) return prior.result;
         if (!prior?.ingested) {
-          if (session.sealed)
-            throw new HttpError(
-              409,
-              "session_complete",
-              "This session is complete. No new uploads are accepted.",
-            );
           if (!c.encrypted_ingest_token)
             throw new HttpError(
               503,
@@ -127,67 +121,11 @@ export function sessionService(
             [session.id, digest],
           );
         }
-        const reviews: { reviewer: string; status: string }[] = [];
-        if (input.complete) {
-          await query("UPDATE sessions SET sealed=true WHERE id=$1", [
-            session.id,
-          ]);
-          for (const reviewer of [
-            "goals-and-outcomes",
-            "friction-and-recovery",
-          ]) {
-            const path = `/api/project-session-reviewers?project_id=${encodeURIComponent(c.qa_project_id!)}`;
-            const response = z
-              .object({
-                results: z.array(
-                  z.object({ session_id: z.string(), status: z.string() }),
-                ),
-              })
-              .parse(
-                await qa(path, {
-                  action: "review",
-                  reviewer,
-                  session_ids: [session.qa_session_id],
-                  request_id: session.review_request_id,
-                }),
-              );
-            let status = response.results.find(
-              (r) => r.session_id === session.qa_session_id,
-            )?.status;
-            if (status !== "queued") {
-              // QA's duplicate request response is also used for quota rejection. Confirm a run
-              // actually exists before reporting submission. Automatic reviews stay disabled.
-              let found = false;
-              for (let page = 0; ; page++) {
-                const data = z
-                  .object({
-                    runs: z.array(z.object({ session_id: z.string() })),
-                    has_more: z.boolean(),
-                  })
-                  .parse(await qa(`${path}&reviewer=${reviewer}&page=${page}`));
-                if (
-                  data.runs.some((r) => r.session_id === session.qa_session_id)
-                ) {
-                  found = true;
-                  break;
-                }
-                if (!data.has_more) break;
-              }
-              if (!found)
-                throw new HttpError(
-                  429,
-                  "qa_capacity",
-                  "QA has not accepted the review; retry the same completion request.",
-                );
-              status = "existing";
-            }
-            reviews.push({ reviewer, status });
-          }
-        }
+        // Every successful registration updates QA's last_received_at. Its enabled
+        // reviewers schedule once the stream is quiet; callers never finalize or seal it.
         const result = {
           session_id: session.qa_session_id,
-          status: input.complete ? "submitted" : "stored",
-          reviews,
+          status: "stored",
         };
         await query(
           "UPDATE upload_receipts SET result=$3::jsonb WHERE session_id=$1 AND digest=$2",

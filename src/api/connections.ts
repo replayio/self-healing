@@ -1,3 +1,4 @@
+import { enableSessionReviews } from "./review-settings.ts";
 import { qaSessionCredential } from "./qa-session-credential.ts";
 import { randomUUID } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
@@ -71,7 +72,10 @@ export function connectionService(
           "already_connected",
           "This account has different project settings.",
         );
-      if (c.ready) return result(c);
+      if (c.ready) {
+        await enableSessionReviews(qa, c.qa_project_id!);
+        return result(c);
+      }
       const lease = randomUUID();
       const locks = await query(
         `UPDATE connections SET lease=$2, lease_until=now()+interval '5 minutes'
@@ -150,22 +154,7 @@ export function connectionService(
             [c.id, vault.encrypt(token, c.account_id)],
           );
         }
-        for (const reviewer of [
-          "goals-and-outcomes",
-          "friction-and-recovery",
-        ]) {
-          await qa(
-            `/api/project-session-reviewers?project_id=${encodeURIComponent(c.qa_project_id!)}`,
-            {
-              action: "settings",
-              reviewer,
-              settings: {
-                enabled: false,
-                create_journeys: reviewer === "friction-and-recovery",
-              },
-            },
-          );
-        }
+        await enableSessionReviews(qa, c.qa_project_id!);
         await qa(summaryPath(c), {
           action: "save",
           id: c.id,

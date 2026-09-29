@@ -6,7 +6,7 @@ This repository follows Loop QA's React/Vite frontend, TypeScript Netlify functi
 
 ## Current scope
 
-The connection API implements the first session-processing slice: one QA identity per provisioned account and one QA project per connected account, encrypted retained credentials, auxiliary upload forwarding, completion-triggered reviews, daily reports, and a scoped QA→Self Healing→Subtext gateway. It uses QA’s existing APIs and session-source callbacks, and requires runtime credentials; it has not been validated against a live customer Subtext account.
+The connection API implements the first session-processing slice: one QA identity per provisioned account and one QA project per connected account, encrypted retained credentials, auxiliary upload forwarding, automatic reviews after upload inactivity, daily reports, and a scoped QA→Self Healing→Subtext gateway. It uses QA’s existing APIs and session-source callbacks, and requires runtime credentials; it has not been validated against a live customer Subtext account.
 
 Start with [Obvious integration and rollout](docs/obvious-integration.md). The older `/projects/*` configuration API remains available, but its provider, fix-PR, event-stream and notification operations still return explicit `501 not_implemented`. This is not yet the complete self-healing PR factory.
 
@@ -54,7 +54,7 @@ curl --fail-with-body "$SELF_HEALING_URL/api/v1/connection" \
   -d '{"name":"My app","production_url":"https://app.example.com"}'
 ```
 
-Use the same key for `/api/v1/connection/sessions`, `/reviews`, and `/reports`. See [the integration guide](docs/obvious-integration.md) for batching, completion, retries and report timing. All JSON write bodies are limited to 256 KiB.
+Use the same key for `/api/v1/connection/sessions`, `/reviews`, and `/reports`. See [the integration guide](docs/obvious-integration.md) for batching, automatic reviews, retries and report timing. All JSON write bodies are limited to 256 KiB.
 
 The separate `/api/v1/projects` API stores local configuration. Its configuration PUTs replace the full document and do not activate provider work. Its project creation POST remains non-idempotent; use the connection API above to provision QA.
 

@@ -78,7 +78,7 @@ The package captures fetch requests (browser-visible headers and bodies), clicks
 
 - `capture.identify({id, name, email})` connects the app’s existing authentication hook to capture.
 - `await capture.flush()` waits for in-flight captures and pending uploads. It rejects if FullStory has no session yet or a capture/upload failed.
-- `await capture.stop()` stops new auxiliary capture, removes listeners, and flushes pending data. It does not stop FullStory or complete the server session. It cannot restart on that page; subsequent `identify()` calls do nothing.
+- `await capture.stop()` stops new auxiliary capture, removes listeners, and flushes pending data. It does not stop FullStory. It cannot restart on that page; subsequent `identify()` calls do nothing.
 
 Uploads use the original fetch so they do not capture themselves. The package retries network errors, 429s, server errors, and `upload_busy` up to three attempts with identical bodies and event IDs. Session rollover keeps ownership of requests already in flight. `captured_at` is Unix milliseconds and `source_timestamp` is page-relative milliseconds; installers do not generate these fields.
 
@@ -114,29 +114,21 @@ export async function POST(request: Request): Promise<Response> {
 
 Use the app's existing access controls for its capture route. The forwarding handler above supplies the transport, not application-specific authentication. Store `SELF_HEALING_URL` and `SELF_HEALING_API_KEY` on the server. Do not put a QA token or Subtext key in this route or in the browser. Do not call QA's registration endpoint: Self Healing attaches the QA ingestion credential and session-source callback itself.
 
-The producer sends `{session_url, auxiliary_data}`; omitting `complete` means `false`. Self Healing forwards those artifacts to QA. It does not transform or store the capture bodies locally.
+The producer sends `{session_url, auxiliary_data}`. Self Healing forwards those artifacts to QA. It does not transform or store the capture bodies locally.
 
-The package splits batches internally at 256 KiB. An oversized individual event is reported through `onError` and causes `capture.flush()` to reject; do not treat that session's capture as complete. There is no event-fragment API or durable offline queue. Installers do not implement batching or modify captured event fields themselves.
+The package splits batches internally at 256 KiB. An oversized individual event is reported through `onError` and causes `capture.flush()` to reject; report the capture failure. There is no event-fragment API or durable offline queue. Installers do not implement batching or modify captured event fields themselves.
 
-## Complete a session and trigger reviews
+## Automatic reviews
 
-The package uploads capture data but does **not** send Self Healing's `complete:true`. Self Healing does not currently detect session completion automatically. Do not seal a session on each upload, page navigation, or browser unload: a FullStory session can span pages, and sealing rejects new captures.
+Self Healing enables QA’s goals/outcomes and friction/recovery reviewers when connecting the application. Continue forwarding capture batches normally. QA makes a session eligible after **15 minutes without a new upload** and checks eligible sessions every 15 minutes. Expect the review to be queued roughly 15–30 minutes after the last upload, subject to QA capacity and project status.
 
-For the first integration test, use a dedicated session. Finish its activity, call `await capture.stop()` on its active page(s) to stop new capture and flush pending uploads, and stop FullStory recording for that test session before issuing this server-side request with the account bearer key:
-
-```json
-{"session_url":"<the completed test session URL>","auxiliary_data":[],"complete":true}
-```
-
-POST it to `/api/v1/connection/sessions`. Retry the identical completion request after a transport failure. Completion seals the session and requests goals/outcomes and friction/recovery reviews. A successful response acknowledges the handoff, not successful analysis. Friction reviews can request reproduction journeys.
-
-For unattended operation, identify an existing mechanism in the application that knows a FullStory session has ended and that all its uploads have succeeded. If there is none, report session finalization as remaining integration work. The capture package and Self Healing API do not supply that mechanism; do not describe the integration as automatically reviewing every session until it exists and has been verified.
+No completion request, recording shutdown, or custom session-ending mechanism is needed. New uploads reset the inactivity timer. QA’s scheduler deduplicates automatic reviews per session and reviewer. This is an inactivity-based review policy, not a claim that FullStory has permanently ended the session. Friction reviews can request reproduction journeys; daily reports use the saved reviews.
 
 ## Verify before declaring setup complete
 
 - Run the target project's relevant tests/build. Exercise a real fetch, click/input, and signed-in identity update; verify the producer sends their artifacts through the local route to Self Healing. Check that the account key stays server-side and the route uses the app's intended access controls.
 - Deploy using the project's normal workflow and permissions. If deployment requires user action, report that boundary and provide the concrete change for review.
-- Submit one real accessible session with captured network and interaction events. Confirm the upload and completion responses, then poll `GET /api/v1/connection/reviews?reviewer=friction-and-recovery&page=0` and the `goals-and-outcomes` reviewer. Inspect the actual task state/result; empty results or an accepted request are not proof of a completed review. Use bounded polling/backoff and report outstanding work without repeatedly resubmitting completion.
+- Submit one real accessible session with captured network and interaction events. Confirm that capture uploads succeed, let that test session go quiet for the scheduling window, then poll `GET /api/v1/connection/reviews?reviewer=friction-and-recovery&page=0` and the `goals-and-outcomes` reviewer. Inspect the actual task state/result; empty results or an accepted request are not proof of a completed review. Use bounded polling/backoff and report outstanding work without resubmitting uploads just to poll (uploads postpone the inactivity window).
 - Daily reports are scheduled at 08:00 UTC for the previous day. The first eligible report covers the connection's setup day and runs the next morning. Read `GET /api/v1/connection/reports?day=YYYY-MM-DD`. The POST report endpoint only reads/awaits the scheduler; it does not force a report immediately. State when a report is not yet eligible instead of fabricating a result.
 
 Report the account and QA project IDs, installed capture/server components, deployment status, first session/review evidence, and any remaining blockers. Never include API keys or secret callback URLs. Distinguish "configured", "review verified", and "first report pending" when appropriate. Do not claim the complete automatic fix factory is active.
