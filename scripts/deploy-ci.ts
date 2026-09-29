@@ -61,7 +61,7 @@ async function deploy() {
   if (process.env.GITHUB_STEP_SUMMARY)
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      `Deployed to https://${target.domain}\n\nImmutable deploy: ${origin}\n\nPublic smoke checks passed. Connection processing requires SELF_HEALING_SECRET, REPLAY_QA_PROVISIONING_TOKEN and the QA bridge deployment. Public smoke checks do not exercise paid provider work.\n`,
+      `Deployed to https://${target.domain}\n\nImmutable deploy: ${origin}\n\nPublic smoke checks passed. Connection processing requires SELF_HEALING_SECRET, LOOPQA_ADMIN_TOKEN and the QA bridge deployment. Public smoke checks do not exercise paid provider work.\n`,
     );
 }
 void deploy().catch((error) => {

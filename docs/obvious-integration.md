@@ -76,7 +76,7 @@ These result endpoints expose QA's native response envelopes. Email/Slack delive
 
 QA must include session-source callback support (#4902). No application-specific setting or secret is required in QA, and existing QA projects retain their behavior.
 
-Add `SELF_HEALING_SECRET` (32 random bytes, base64), `REPLAY_QA_PROVISIONING_TOKEN` (QA admin token authorized for `/api/admin-service-accounts`), and optionally `REPLAY_QA_URL` to Self Healing's production Infisical environment. Set `SELF_HEALING_URL` to the public HTTPS origin QA can reach; it defaults to `https://self-healing.replay.io`. Use `https://replay-self-healing.netlify.app` until custom DNS/TLS is ready. CI syncs these only to production Functions. Keep previews isolated. Back up the encryption secret: changing it changes fingerprints and makes stored credentials unreadable.
+Add `SELF_HEALING_SECRET` (32 random bytes, base64), `LOOPQA_ADMIN_TOKEN` (QA admin token authorized for `/api/admin-service-accounts`), and optionally `REPLAY_QA_URL` to Self Healing's production Infisical environment. Set `SELF_HEALING_URL` to the public HTTPS origin QA can reach; it defaults to `https://self-healing.replay.io`. Use `https://replay-self-healing.netlify.app` until custom DNS/TLS is ready. CI syncs these only to production Functions. Keep previews isolated. Back up the encryption secret: changing it changes fingerprints and makes stored credentials unreadable.
 
 This change also requires QA #4915. The provisioning token is privileged and used exclusively to issue customer-specific QA tokens. Do not install the previously issued shared `service|self-healing` token: it is non-admin and cannot provision identities. The deploy removes the retired `REPLAY_QA_API_TOKEN` variable.
 

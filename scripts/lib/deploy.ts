@@ -37,7 +37,7 @@ export function deploymentConfig(env: NodeJS.ProcessEnv) {
   const runtime = Object.fromEntries(
     [
       "SELF_HEALING_SECRET",
-      "REPLAY_QA_PROVISIONING_TOKEN",
+      "LOOPQA_ADMIN_TOKEN",
       "REPLAY_QA_URL",
       "SELF_HEALING_URL",
     ].flatMap((name) => (env[name] ? [[name, env[name]!]] : [])),

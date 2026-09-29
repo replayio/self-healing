@@ -287,8 +287,8 @@ test("new account callbacks decrypt only the retained Subtext key using its fing
 
 test("missing provisioning configuration does not make an account's first issuance uncertain", async () => {
   const f = await fixture();
-  const previous = process.env.REPLAY_QA_PROVISIONING_TOKEN;
-  delete process.env.REPLAY_QA_PROVISIONING_TOKEN;
+  const previous = process.env.LOOPQA_ADMIN_TOKEN;
+  delete process.env.LOOPQA_ADMIN_TOKEN;
   try {
     const service = accountService(f.query, f.vault, async () => ({
       accountId: "unused",
@@ -302,7 +302,7 @@ test("missing provisioning configuration does not make an account's first issuan
     assert.ok((await f.service.provisionAccount("subtext-a")).api_key);
   } finally {
     if (previous !== undefined)
-      process.env.REPLAY_QA_PROVISIONING_TOKEN = previous;
+      process.env.LOOPQA_ADMIN_TOKEN = previous;
     await f.db.close();
   }
 });

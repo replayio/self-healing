@@ -83,7 +83,7 @@ export function accountService(
                 "provisioning_pending",
                 "Prior QA token issuance is unresolved; operator reconciliation is required.",
               );
-            if (!provision && !process.env.REPLAY_QA_PROVISIONING_TOKEN)
+            if (!provision && !process.env.LOOPQA_ADMIN_TOKEN)
               throw new HttpError(
                 503,
                 "qa_unavailable",
@@ -93,7 +93,7 @@ export function accountService(
               provision ??
               qaClient({
                 ...process.env,
-                REPLAY_QA_API_TOKEN: process.env.REPLAY_QA_PROVISIONING_TOKEN,
+                REPLAY_QA_API_TOKEN: process.env.LOOPQA_ADMIN_TOKEN,
               });
             await query(
               "UPDATE accounts SET qa_issue_attempted=true WHERE id=$1",

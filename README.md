@@ -67,7 +67,7 @@ Configure the Self Healing Infisical production environment with **only these re
 | `NETLIFY_SITE_ID`      | The provisioned site ID above               |
 | `DATABASE_URL`         | The provisioned Neon database connection    |
 
-Do not add a shared Subtext key or a Self Healing key map. Factories supply Subtext credentials only when provisioning accounts. The deployment copies `DATABASE_URL` and the explicit connection runtime settings (`SELF_HEALING_SECRET`, `REPLAY_QA_PROVISIONING_TOKEN`, optional `REPLAY_QA_URL` and `SELF_HEALING_URL`) into Netlify’s production Functions scope; deploy credentials and Infisical credentials stay in CI. Any retired key-map variable on this dedicated site is removed. Changing an Infisical database secret takes effect on the next successful deployment. The target site and database hostname are checked before any mutation; resource moves require updating `scripts/lib/deploy.ts` as well as secrets.
+Do not add a shared Subtext key or a Self Healing key map. Factories supply Subtext credentials only when provisioning accounts. The deployment copies `DATABASE_URL` and the explicit connection runtime settings (`SELF_HEALING_SECRET`, `LOOPQA_ADMIN_TOKEN`, optional `REPLAY_QA_URL` and `SELF_HEALING_URL`) into Netlify’s production Functions scope; deploy credentials and Infisical credentials stay in CI. Any retired key-map variable on this dedicated site is removed. Changing an Infisical database secret takes effect on the next successful deployment. The target site and database hostname are checked before any mutation; resource moves require updating `scripts/lib/deploy.ts` as well as secrets.
 
 GitHub repository configuration:
 
@@ -92,4 +92,4 @@ Preview deployment automation is intentionally absent. Add separate preview secr
 - `public/api/v1/skills/`: public factory instructions, copied into `dist` by Vite.
 - `tests/`: HTTP-handler and Postgres integration coverage.
 
-Connection processing also requires `SELF_HEALING_SECRET`, `REPLAY_QA_PROVISIONING_TOKEN`, and optionally `REPLAY_QA_URL` in production Infisical. See [rollout requirements](docs/obvious-integration.md#deployment-and-migration).
+Connection processing also requires `SELF_HEALING_SECRET`, `LOOPQA_ADMIN_TOKEN`, and optionally `REPLAY_QA_URL` in production Infisical. See [rollout requirements](docs/obvious-integration.md#deployment-and-migration).
