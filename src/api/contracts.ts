@@ -321,7 +321,60 @@ const connectionOperations: Operation[] = [
     response: z.object({}).passthrough(),
   },
 ];
+export const agentSkills = [
+  {
+    id: "setup-self-healing",
+    name: "Set up Self Healing",
+    description:
+      "Provision an account, connect this project, install session capture, and verify the first review.",
+    path: "/api/v1/skills/setup-self-healing/SKILL.md",
+  },
+  {
+    id: "operate-self-healing",
+    name: "Operate Self Healing",
+    description:
+      "Submit completed sessions, read reviews and daily reports, and handle retries and blocked work.",
+    path: "/api/v1/skills/operate-self-healing/SKILL.md",
+  },
+] as const;
+const SkillCatalog = z.object({
+  skills: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string(),
+      url: z.string().url(),
+    }),
+  ),
+});
+const Discovery = z.object({
+  name: z.string(),
+  openapi_url: z.string().url(),
+  skills_url: z.string().url(),
+  setup_skill_url: z.string().url(),
+  instructions: z.string(),
+  authentication: z.string(),
+});
+
 export const operations: Operation[] = [
+  {
+    id: "discoverApi",
+    method: "GET",
+    path: "/api/v1",
+    summary: "Start here: API and agent setup instructions",
+    implemented: true,
+    public: true,
+    response: Discovery,
+  },
+  {
+    id: "listSkills",
+    method: "GET",
+    path: "/api/v1/skills",
+    summary: "List public agent skills and their download URLs",
+    implemented: true,
+    public: true,
+    response: SkillCatalog,
+  },
   {
     id: "provisionAccount",
     method: "POST",

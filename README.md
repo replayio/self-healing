@@ -28,6 +28,12 @@ Provision with a **Subtext API key** using `POST /api/v1/accounts` (`provisionAc
 
 ## Factory quick start
 
+Copy the setup prompt from the landing page into Obvious or another coding agent:
+
+> Read the API at https://self-healing.replay.io/api/v1 and follow its setup skill to set up Self Healing for this project.
+
+`GET /api/v1` is the public starting point. It links to the setup skill, OpenAPI, and `GET /api/v1/skills`, the public skill catalog. Agents should follow the served setup skill to inspect the target project, provision credentials, implement capture forwarding, and verify a real review. No credentials are required to discover or read skills.
+
 Set `SELF_HEALING_URL` to your deployed origin and `SELF_HEALING_API_KEY` to the account key returned by provisioning. Fetch these public resources first:
 
 - `GET /api/v1/openapi.json` — schemas, operation IDs, and `x-implementation-status` for every operation.
