@@ -6,6 +6,16 @@ The [Self Healing Integration proposal](https://docs.google.com/document/d/1NCi4
 
 The initial service is a coordination layer. It does not become another session-recording store. The eventual direction is Fullstory-managed session/QA data with externally stored, optionally zero-data-retention QA. That is a target architecture, not a property of this initial implementation.
 
+## Capture implementation
+
+`packages/capture` owns the `@replayio/self-healing-capture` npm package. Setup skills install it
+and call `initCapture`; they do not embed browser producers. The package initializes FullStory,
+produces version-1 auxiliary artifacts, batches uploads to a configurable same-origin route, and
+reports failures through `onError`/`flush`. QA consumes the artifact contract independently and
+can preserve optional `session/capture-producer` package/version provenance without importing the
+package. The browser has no account or provider credential. Publishing the npm package is explicit
+and must precede deploying installer instructions for a new version.
+
 ## Ownership
 
 | Component                       | Responsibility                                                                                              |

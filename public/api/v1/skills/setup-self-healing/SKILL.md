@@ -43,20 +43,38 @@ Recover interrupted setup by repeating that exact POST. Save the chosen name and
 
 A connected response confirms configuration, not a successful review. QA project creation can start initial exploration, and QA work requires credit capacity. Report quota or credit blocks to the user/service operator; do not promise free or unlimited work.
 
-## Install the existing capture implementation
+## Install the capture package
 
-Read [the existing QA capture code](./capture.md) at `/api/v1/skills/setup-self-healing/capture.md` on this service. It contains the complete TypeScript producer, copied from a pinned QA revision, including network requests/responses, interactions, identity, metrics, and session context. Use that code as the starting point; do not design a new generic fetch wrapper or a new auxiliary-data schema.
+The capture implementation is maintained in [`@replayio/self-healing-capture`](https://www.npmjs.com/package/@replayio/self-healing-capture). Install it; do not copy or generate a fetch wrapper. Its [package README](https://github.com/replayio/self-healing/tree/main/packages/capture) documents its API and supported capture behavior.
 
-1. Inspect the application for `initFullStory`, `identifyFullStoryUser`, and `/api/replay-qa-session`. If the QA capture implementation is already installed, reuse it and change its server destination as described below. Do not install a second fetch wrapper or initialize FullStory twice.
-2. If capture is missing, follow the companion guide's `npx @subtextdev/subtext-wizard` setup and `npm install @fullstory/browser`. Use the FullStory organization accessible through the Subtext key supplied during account provisioning; do not create an unrelated organization.
-3. Put the guide's TypeScript block in the application's browser integration module (for example, `src/lib/fullstory.ts`). Replace `<FULLSTORY_ORG_ID>` with that organization's ID, using the project's existing configuration convention. Call `initFullStory()` once in the production browser entry point, before rendering. Do not call it during server rendering. After authentication resolves, call `identifyFullStoryUser({ id, name, email })` with the application's user fields.
-4. Keep the producer's `sendCaptureBatch` destination `/api/replay-qa-session`. Implement that same-origin server route with the forwarding code below. Despite the local route name, it sends to Self Healing. The producer uses its saved `nativeFetch` for uploads so uploads do not capture themselves.
+1. Inspect the application for an existing FullStory initialization or copied capture shim. Replace that shim with this package, preserving the existing organization ID and identity hook. There must be one recorder/FullStory initialization.
+2. If the app has no FullStory organization, run `npx @subtextdev/subtext-wizard` to select the organization accessible through the Subtext key used to provision this account.
+3. Install the package and its FullStory peer dependency:
 
-The producer already defines what to capture. Preserve the application's existing capture policy; this skill adds no blanket field-redaction requirement. QA uses the captured request/response headers and bodies to reconstruct network behavior. `captured_at` is absolute Unix milliseconds; `source_timestamp` is page-relative `performance.now()`, not time since the FullStory session began. Preserve the producer's session coordinator so requests finishing after a rollover remain attached to the session in which they started.
+```sh
+npm install @replayio/self-healing-capture @fullstory/browser
+```
+
+If the package has not yet been published, report that release dependency; do not fall back to copying source. In the production browser entry point, before rendering (not during SSR):
+
+```ts
+import { initCapture } from '@replayio/self-healing-capture'
+
+export const capture = initCapture({
+  orgId: '<FULLSTORY_ORG_ID>',
+  endpoint: '/api/self-healing/session',
+  onError: error => console.error('Session capture failed', error),
+})
+
+// In the app's existing authentication callback:
+capture.identify({ id: user.id, name: user.name, email: user.email })
+```
+
+The package owns network, interaction, identity, metrics and session-context generation, timestamps, session rollover, batching and retries. Preserve the app's existing capture policy. Do not add a generic field-redaction layer. Keep dependencies locked and upgrade the package to receive capture fixes.
 
 ## Forward captures through Self Healing
 
-Mount this handler at POST `/api/replay-qa-session` using the application's server framework. For example, in a Next.js App Router project, place it in `app/api/replay-qa-session/route.ts` and export `POST`. Use the application's existing server-side environment access if it does not use `process.env`.
+Mount this handler at POST `/api/self-healing/session` using the application's server framework. For example, in a Next.js App Router project, place it in `app/api/self-healing/session/route.ts` and export `POST`. Use the application's existing server-side environment access if it does not use `process.env`.
 
 ```ts
 export async function POST(request: Request): Promise<Response> {
@@ -86,19 +104,13 @@ Use the app's existing access controls for its capture route. The forwarding han
 
 The producer sends `{session_url, auxiliary_data}`; omitting `complete` means `false`. Self Healing forwards those artifacts to QA. It does not transform or store the capture bodies locally.
 
-### Current transport limitation
-
-The QA producer allows individual request/response bodies up to 1,000,000 bytes and a capture budget of 8,000,000 bytes per session on a page. Self Healing currently limits each entire JSON request to 262,144 bytes. **The producer cannot be used unchanged for all supported QA captures.**
-
-When adapting `queueCaptureUpload`, split the `network/captured-exchanges` array and `interaction/captured-interactions` array between whole events. Each resulting request needs the original `session_url`, artifact namespace/key/schema version, and payload version. Measure UTF-8 bytes of the serialized request, including its envelope; JavaScript string length is not a byte count. Keep event IDs and contents unchanged, send batches in order, and retry the same serialized batch after a transport failure. Forward the producer's metrics, identity, and capture-context artifacts as well.
-
-If one event alone exceeds the request limit, splitting the array cannot fix it. Report this as an API transport limitation; do not silently truncate the event or claim full capture support. There is no event-fragment API. The companion producer stops uploads for a session after failed retries/non-success responses; it is not a durable server queue. Surface that failure during verification.
+The package splits batches internally at 256 KiB. An oversized individual event is reported through `onError` and causes `capture.flush()` to reject; do not treat that session's capture as complete. There is no event-fragment API or durable offline queue. Installers do not implement batching or modify captured event fields themselves.
 
 ## Complete a session and trigger reviews
 
-The existing QA producer uploads capture data but does **not** send Self Healing's `complete:true`. Self Healing does not currently detect session completion automatically. Do not seal a session on each upload, page navigation, or browser unload: a FullStory session can span pages, and sealing rejects new captures.
+The package uploads capture data but does **not** send Self Healing's `complete:true`. Self Healing does not currently detect session completion automatically. Do not seal a session on each upload, page navigation, or browser unload: a FullStory session can span pages, and sealing rejects new captures.
 
-For the first integration test, use a dedicated session. Finish its activity, wait for its pending requests and capture uploads to succeed, and stop recording that test session before issuing this server-side request with the account bearer key:
+For the first integration test, use a dedicated session. Finish its activity, call `await capture.stop()` on its active page(s) to stop new capture and flush pending uploads, and stop FullStory recording for that test session before issuing this server-side request with the account bearer key:
 
 ```json
 {"session_url":"<the completed test session URL>","auxiliary_data":[],"complete":true}
@@ -106,7 +118,7 @@ For the first integration test, use a dedicated session. Finish its activity, wa
 
 POST it to `/api/v1/connection/sessions`. Retry the identical completion request after a transport failure. Completion seals the session and requests goals/outcomes and friction/recovery reviews. A successful response acknowledges the handoff, not successful analysis. Friction reviews can request reproduction journeys.
 
-For unattended operation, identify an existing mechanism in the application that knows a FullStory session has ended and that all its uploads have succeeded. If there is none, report session finalization as remaining integration work. The current capture producer and Self Healing API do not supply that mechanism; do not describe the integration as automatically reviewing every session until it exists and has been verified.
+For unattended operation, identify an existing mechanism in the application that knows a FullStory session has ended and that all its uploads have succeeded. If there is none, report session finalization as remaining integration work. The capture package and Self Healing API do not supply that mechanism; do not describe the integration as automatically reviewing every session until it exists and has been verified.
 
 ## Verify before declaring setup complete
 
