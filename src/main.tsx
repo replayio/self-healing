@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 
+const Dashboard = React.lazy(() => import("./dashboard/Dashboard"));
+
 const apiGroups = [
   [
     "Project configuration",
@@ -272,6 +274,12 @@ function App() {
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {window.location.pathname.replace(/\/$/, "") === "/dashboard" ? (
+      <React.Suspense fallback={<p role="status">Opening dashboard…</p>}>
+        <Dashboard />
+      </React.Suspense>
+    ) : (
+      <App />
+    )}
   </React.StrictMode>,
 );

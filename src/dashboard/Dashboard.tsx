@@ -1,0 +1,686 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { z } from "zod";
+import {
+  DashboardOverview,
+  DashboardBugs,
+  DashboardReports,
+  type DashboardBug,
+} from "../api/contracts";
+import "./dashboard.css";
+
+type Overview = z.infer<typeof DashboardOverview>;
+type Bug = z.infer<typeof DashboardBug>;
+type Reports = z.infer<typeof DashboardReports>;
+const tabs = ["overview", "bugs", "reports"] as const;
+type Tab = (typeof tabs)[number];
+const iconPaths = {
+  overview: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  bugs: (
+    <>
+      <rect x="7" y="7" width="10" height="14" rx="5" />
+      <path d="M9 7V5a3 3 0 0 1 6 0v2M3 9l4 2m10 0 4-2M3 15h4m10 0h4M5 21l3-3m8 0 3 3M12 8v12" />
+    </>
+  ),
+  reports: (
+    <>
+      <path d="M14 3H5v18h14V8zM14 3v5h5M8 12h8m-8 4h6" />
+    </>
+  ),
+  left: <path d="m14 6-6 6 6 6" />,
+  right: <path d="m10 6 6 6-6 6" />,
+  refresh: (
+    <>
+      <path d="M20 7v5h-5M4 17v-5h5" />
+      <path d="M5 8a8 8 0 0 1 14-3l1 7M4 12l1 7a8 8 0 0 0 14-3" />
+    </>
+  ),
+  sessions: (
+    <>
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M8 21h8m-4-4v4m-3-10 6 3-6 3z" />
+    </>
+  ),
+  check: <path d="m5 12 4 4L19 6" />,
+};
+function Icon({ name }: { name: keyof typeof iconPaths }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {iconPaths[name]}
+    </svg>
+  );
+}
+const Failure = z.object({ error: z.object({ message: z.string() }) });
+async function api(path: string, signal?: AbortSignal, body?: unknown) {
+  const response = await fetch(`/api/v1/dashboard/${path}`, {
+    credentials: "same-origin",
+    signal,
+    cache: "no-store",
+    ...(body === undefined
+      ? {}
+      : {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+  });
+  const value: unknown = await response.json();
+  if (!response.ok)
+    throw new Error(
+      Failure.safeParse(value).data?.error.message ??
+        "Could not load dashboard data. Try again.",
+    );
+  return value;
+}
+// One exchange per page load, including React StrictMode's repeated mount effects.
+let initialization: Promise<void> | undefined;
+function initialize() {
+  if (!initialization) {
+    const ticket = new URLSearchParams(window.location.hash.slice(1)).get(
+      "ticket",
+    );
+    if (ticket) window.history.replaceState(null, "", "/dashboard");
+    initialization = ticket
+      ? api("redeem", undefined, { ticket }).then(() => undefined)
+      : Promise.resolve();
+  }
+  return initialization;
+}
+function useData<T>(path: string, schema: z.ZodType<T>) {
+  const [state, setState] = useState<{
+    path: string;
+    data?: T;
+    error?: string;
+  }>();
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setState({ path });
+    api(path, controller.signal)
+      .then((value) => schema.parse(value))
+      .then((data) => {
+        if (!controller.signal.aborted) setState({ path, data });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setState({
+            path,
+            error:
+              error instanceof z.ZodError
+                ? "QA returned unexpected dashboard data."
+                : String(error.message),
+          });
+      });
+    return () => controller.abort();
+  }, [path, revision, schema]);
+  return {
+    ...(state?.path === path ? state : {}),
+    retry: () => setRevision((n) => n + 1),
+  };
+}
+function LoadState({
+  error,
+  retry,
+  children,
+}: {
+  error?: string;
+  retry: () => void;
+  children: ReactNode;
+}) {
+  return error ? (
+    <div className="dh-state" role="alert">
+      <p>{error}</p>
+      <button onClick={retry}>Retry</button>
+    </div>
+  ) : (
+    <div className="dh-state" role="status">
+      {children}
+    </div>
+  );
+}
+const count = (n: number) => n.toLocaleString();
+const date = (value: string) =>
+  new Date(
+    value.length === 10 ? `${value}T00:00:00Z` : value,
+  ).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+const pct = (part: number, total: number) =>
+  total ? `${((100 * part) / total).toFixed(1)}%` : "—";
+export function SessionChart({ days }: { days: Overview["days"] }) {
+  const [active, setActive] = useState<number | null>(null);
+  const max = Math.max(1, ...days.map((d) => d.sessions));
+  const point = active === null ? undefined : days[active];
+  const width = 960,
+    height = 250,
+    top = 15,
+    bottom = 35,
+    left = 45;
+  const plot = height - top - bottom,
+    step = (width - left - 15) / days.length;
+  return (
+    <section className="dh-panel dh-chart" aria-label="Daily session activity">
+      <div className="dh-panel-heading">
+        <div>
+          <h2>Session activity</h2>
+          <p>Last 30 days · UTC · By session first received</p>
+        </div>
+      </div>
+      <div className="dh-legend">
+        <span>
+          <i className="dh-no-issue" />
+          No detected issue
+        </span>
+        <span>
+          <i className="dh-serious" />
+          Serious issue only
+        </span>
+        <span>
+          <i className="dh-bug" />
+          Bug only
+        </span>
+        <span>
+          <i className="dh-both" />
+          Bug & serious issue
+        </span>
+      </div>
+      <div className="dh-chart-scroll">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          role="group"
+          aria-label="Daily stacked session counts. Focus a column for counts and percentages."
+        >
+          {[0, 1, 2, 3, 4].map((i) => (
+            <g key={i}>
+              <line
+                x1={left}
+                x2={width - 15}
+                y1={top + (i * plot) / 4}
+                y2={top + (i * plot) / 4}
+                stroke="#e5e5e5"
+                strokeDasharray="3 3"
+              />
+              <text x={left - 8} y={top + (i * plot) / 4 + 4} textAnchor="end">
+                {Math.ceil((max * (4 - i)) / 4)}
+              </text>
+            </g>
+          ))}
+          {days.map((d, index) => {
+            const parts = [
+              d.sessions -
+                d.bug_sessions -
+                d.serious_sessions +
+                d.both_sessions,
+              d.serious_sessions - d.both_sessions,
+              d.bug_sessions - d.both_sessions,
+              d.both_sessions,
+            ];
+            const colors = ["#93c5fd", "#f59e0b", "#f02d5e", "#7c3aed"];
+            let used = 0;
+            const label = `${date(d.day)}: ${d.sessions} sessions, ${pct(d.bug_sessions, d.sessions)} with bugs, ${pct(d.serious_sessions, d.sessions)} with serious issues, ${d.reviewed_sessions} reviewed.`;
+            return (
+              <g
+                key={d.day}
+                tabIndex={0}
+                role="img"
+                aria-label={label}
+                onFocus={() => setActive(index)}
+                onMouseEnter={() => setActive(index)}
+                onClick={() => setActive(index)}
+              >
+                <title>{label}</title>
+                <rect
+                  x={left + step * index}
+                  y={top}
+                  width={step}
+                  height={plot}
+                  fill={active === index ? "#f5f5f5" : "transparent"}
+                />
+                {parts.map((part, i) => {
+                  used += part;
+                  return (
+                    <rect
+                      key={i}
+                      x={left + step * index + 4}
+                      y={top + plot - (used / max) * plot}
+                      width={step - 8}
+                      height={(part / max) * plot}
+                      fill={colors[i]}
+                    />
+                  );
+                })}
+                {(index % 5 === 0 || index === days.length - 1) && (
+                  <text
+                    x={left + step * (index + 0.5)}
+                    y={height - 12}
+                    textAnchor="middle"
+                  >
+                    {d.day.slice(5)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="dh-chart-detail" aria-live="polite">
+        {point ? (
+          <>
+            <strong>{date(point.day)}</strong>
+            <span>{count(point.sessions)} sessions</span>
+            <span>{pct(point.bug_sessions, point.sessions)} with bugs</span>
+            <span>
+              {pct(point.serious_sessions, point.sessions)} with serious issues
+            </span>
+            <span>{count(point.reviewed_sessions)} reviewed</span>
+          </>
+        ) : (
+          "Hover or focus a day for session counts and percentages."
+        )}
+      </div>
+      <p className="dh-note">
+        Serious issues blocked user progress. Percentages include all sessions;
+        unreviewed sessions may still contain issues.
+      </p>
+      {!days.some((d) => d.sessions) && (
+        <p className="dh-state">No sessions received in the last 30 days.</p>
+      )}
+    </section>
+  );
+}
+function OverviewTab() {
+  const result = useData("overview", DashboardOverview);
+  if (!result.data) return <LoadState {...result}>Loading overview…</LoadState>;
+  const d = result.data;
+  const cards: [string, number, keyof typeof iconPaths][] = [
+    ["Open bugs", d.open_bugs, "bugs"],
+    ["Closed bugs", d.closed_bugs, "check"],
+    ["New open bugs · 24h", d.new_open_bugs, "bugs"],
+    ["Sessions", d.sessions, "sessions"],
+  ];
+  return (
+    <>
+      <div className="dh-title-row">
+        <div>
+          <h1>{d.name}</h1>
+          <p>Overview of user sessions and detected problems</p>
+        </div>
+        <button
+          className="dh-icon-button"
+          onClick={result.retry}
+          aria-label="Refresh overview"
+        >
+          <Icon name="refresh" />
+        </button>
+      </div>
+      <div className="dh-cards">
+        {cards.map(([label, value, icon]) => (
+          <article className="dh-card" key={label}>
+            <div>
+              <span>{label}</span>
+              <Icon name={icon} />
+            </div>
+            <strong>{count(value)}</strong>
+          </article>
+        ))}
+      </div>
+      <SessionChart days={d.days} />
+    </>
+  );
+}
+export function BugTable({ bugs }: { bugs: Bug[] }) {
+  return (
+    <div className="dh-table-scroll">
+      <table className="dh-table">
+        <thead>
+          <tr>
+            <th>Bug</th>
+            <th>Severity</th>
+            <th>Detected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bugs.map((b) => (
+            <tr key={b.id}>
+              <td>
+                <a href={b.url} target="_blank" rel="noopener noreferrer">
+                  {b.title}
+                  <span aria-hidden="true"> ↗</span>
+                </a>
+              </td>
+              <td>
+                <span
+                  className={`dh-severity dh-severity-${["critical", "high", "medium", "low"].includes(b.severity) ? b.severity : "low"}`}
+                >
+                  {b.severity}
+                </span>
+              </td>
+              <td>
+                <time dateTime={b.discovered_at}>{date(b.discovered_at)}</time>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function BugsTab() {
+  const [page, setPage] = useState(1);
+  const result = useData(`bugs?page=${page}`, DashboardBugs);
+  return (
+    <>
+      <div className="dh-title-row">
+        <div>
+          <h1>Open bugs</h1>
+          <p>
+            Open a bug report in Replay QA to see its evidence and reproduction.
+          </p>
+        </div>
+        <button
+          className="dh-icon-button"
+          onClick={result.retry}
+          aria-label="Refresh bugs"
+        >
+          <Icon name="refresh" />
+        </button>
+      </div>
+      {result.data ? (
+        <section className="dh-panel">
+          <div className="dh-panel-heading">
+            <h2>{count(result.data.total)} open bugs</h2>
+          </div>
+          {result.data.items.length ? (
+            <BugTable bugs={result.data.items} />
+          ) : (
+            <p className="dh-state">No open bugs.</p>
+          )}
+          <div className="dh-pagination">
+            <button
+              className="dh-icon-button"
+              disabled={page === 1}
+              onClick={() => setPage((n) => n - 1)}
+              aria-label="Previous bug page"
+            >
+              <Icon name="left" />
+            </button>
+            <span>Page {page}</span>
+            <button
+              className="dh-icon-button"
+              disabled={!result.data.has_more}
+              onClick={() => setPage((n) => n + 1)}
+              aria-label="Next bug page"
+            >
+              <Icon name="right" />
+            </button>
+          </div>
+        </section>
+      ) : (
+        <LoadState {...result}>Loading bugs…</LoadState>
+      )}
+    </>
+  );
+}
+export function ReportBody({ run }: { run: NonNullable<Reports["run"]> }) {
+  if (!run.output)
+    return (
+      <p className="dh-state" role="status">
+        Report{" "}
+        {run.status === "failed"
+          ? "failed to generate."
+          : `status: ${run.status}.`}
+      </p>
+    );
+  const openBugs = run.bugs.filter(
+    (b) => b.status === "open" || b.status === "reopened",
+  );
+  return (
+    <div className="dh-report-body">
+      <p className="dh-note">
+        {run.reviewed_sessions ?? "—"} of {run.sessions ?? "—"} sessions
+        reviewed · {run.timezone}
+      </p>
+      <section>
+        <h3>Overview</h3>
+        <p className="dh-prose">{run.output.overview}</p>
+      </section>
+      {[false, true].map((duplicate) => {
+        const bugs = openBugs.filter((b) => b.is_duplicate === duplicate);
+        return (
+          <section key={String(duplicate)}>
+            <h3>
+              {duplicate ? "Duplicate bugs" : "New bugs"} ({bugs.length})
+            </h3>
+            {bugs.length ? (
+              <BugTable bugs={bugs} />
+            ) : (
+              <p className="dh-note">
+                No {duplicate ? "duplicate" : "new"} bugs.
+              </p>
+            )}
+          </section>
+        );
+      })}
+      {(["User trends", "Friction", "New bugs"] as const).map((category) => {
+        const findings = run.output!.findings.filter(
+          (f) => f.category === category,
+        );
+        return (
+          findings.length > 0 && (
+            <section key={category}>
+              <h3>{category === "New bugs" ? "Bug findings" : category}</h3>
+              {findings.map((f, i) => (
+                <details className="dh-finding" key={i}>
+                  <summary>
+                    {f.title ?? f.text.split(/[.!?](?:\s|$)/)[0]}
+                  </summary>
+                  <p className="dh-prose">{f.text}</p>
+                  {f.bugs.length > 0 && <BugTable bugs={f.bugs} />}
+                </details>
+              ))}
+            </section>
+          )
+        );
+      })}
+    </div>
+  );
+}
+function ReportsTab() {
+  const [day, setDay] = useState<string>();
+  const result = useData(
+    `reports${day ? `?day=${day}` : ""}`,
+    DashboardReports,
+  );
+  const history = result.data,
+    run = history?.run;
+  const shown = day ?? run?.day ?? "";
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  return (
+    <>
+      <div className="dh-title-row">
+        <div>
+          <h1>Daily reports</h1>
+          <p>
+            User behavior, recurring friction, and bugs from each day’s
+            sessions.
+          </p>
+        </div>
+        <button
+          className="dh-icon-button"
+          onClick={result.retry}
+          aria-label="Refresh reports"
+        >
+          <Icon name="refresh" />
+        </button>
+      </div>
+      <section className="dh-panel">
+        <div className="dh-panel-heading">
+          <h2>Daily user behavior</h2>
+          <div className="dh-report-navigation">
+            <button
+              className="dh-icon-button"
+              disabled={!history?.older}
+              onClick={() => setDay(history?.older ?? undefined)}
+              aria-label="Previous report"
+            >
+              <Icon name="left" />
+            </button>
+            <label className="dh-date-label">
+              <span className="dh-sr-only">Report date</span>
+              <input
+                type="date"
+                max={yesterday}
+                value={shown}
+                onChange={(event) => {
+                  if (event.target.value && event.target.value <= yesterday)
+                    setDay(event.target.value);
+                }}
+              />
+            </label>
+            <button
+              className="dh-icon-button"
+              disabled={!history?.newer}
+              onClick={() => setDay(history?.newer ?? undefined)}
+              aria-label="Next report"
+            >
+              <Icon name="right" />
+            </button>
+            <button onClick={() => setDay(undefined)} disabled={!day}>
+              Latest
+            </button>
+          </div>
+        </div>
+        {!history ? (
+          <LoadState {...result}>Loading daily report…</LoadState>
+        ) : (
+          <>
+            {history.latest_attempt &&
+              history.latest_attempt.day !== run?.day && (
+                <p className="dh-note dh-report-status">
+                  <button onClick={() => setDay(history.latest_attempt!.day)}>
+                    {date(history.latest_attempt.day)}
+                  </button>{" "}
+                  · {history.latest_attempt.status}
+                </p>
+              )}
+            {run ? (
+              <ReportBody run={run} />
+            ) : (
+              <p className="dh-state">
+                {day
+                  ? `No report for ${date(day)}.`
+                  : "No daily reports yet. Reports appear after the daily run."}
+              </p>
+            )}
+          </>
+        )}
+      </section>
+    </>
+  );
+}
+export default function Dashboard() {
+  const initial = new URLSearchParams(window.location.search).get("tab");
+  const [tab, setTab] = useState<Tab>(
+    tabs.includes(initial as Tab) ? (initial as Tab) : "overview",
+  );
+  const [ready, setReady] = useState(false),
+    [error, setError] = useState("");
+  useEffect(() => {
+    initialize()
+      .then(() => setReady(true))
+      .catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => {
+    const pop = () => {
+      const value = new URLSearchParams(window.location.search).get("tab");
+      setTab(tabs.includes(value as Tab) ? (value as Tab) : "overview");
+    };
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, []);
+  function navigate(value: Tab) {
+    setTab(value);
+    window.history.pushState(null, "", `/dashboard?tab=${value}`);
+  }
+  async function logout() {
+    try {
+      await api("logout", undefined, {});
+      setReady(false);
+      setError(
+        "Dashboard session ended. Open a fresh link from your factory to return.",
+      );
+    } catch {
+      setError("Could not end the session. Please try again.");
+    }
+  }
+  return (
+    <div className="dh-app">
+      <header>
+        <a className="brand" href="/">
+          <img className="brand-icon" src="/images/replay-logo.svg" alt="" />
+          Self Healing
+        </a>
+        <span className="badge">Dashboard</span>
+        <nav aria-label="Dashboard navigation">
+          {tabs.map((t) => (
+            <a
+              href={`/dashboard?tab=${t}`}
+              key={t}
+              aria-current={t === tab ? "page" : undefined}
+              onClick={(e) => {
+                if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+                  e.preventDefault();
+                  navigate(t);
+                }
+              }}
+            >
+              <Icon name={t} />
+              {t[0]!.toUpperCase() + t.slice(1)}
+            </a>
+          ))}
+        </nav>
+        {ready && (
+          <button className="dh-signout" onClick={logout}>
+            End dashboard session
+          </button>
+        )}
+      </header>
+      <main className="dh-main">
+        {error ? (
+          <div className="dh-state" role="alert">
+            {error}
+          </div>
+        ) : !ready ? (
+          <p className="dh-state" role="status">
+            Opening dashboard…
+          </p>
+        ) : tab === "overview" ? (
+          <OverviewTab />
+        ) : tab === "bugs" ? (
+          <BugsTab />
+        ) : (
+          <ReportsTab />
+        )}
+      </main>
+    </div>
+  );
+}

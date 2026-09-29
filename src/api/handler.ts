@@ -1,3 +1,10 @@
+import {
+  dashboardCookie,
+  getDashboardAuth,
+  requireDashboardOrigin,
+} from "./dashboard-auth.ts";
+import { dashboardData } from "./dashboard-data.ts";
+import { qaClient } from "./qa.ts";
 import { getAccountService } from "./accounts.ts";
 import { getConnectionService } from "./connections.ts";
 import { randomUUID } from "node:crypto";
@@ -68,6 +75,8 @@ export function createHandler(
     authenticate?: Authenticator;
     connections?: typeof getConnectionService;
     accounts?: typeof getAccountService;
+    dashboardAuth?: typeof getDashboardAuth;
+    dashboardData?: typeof dashboardData;
   } = {},
 ) {
   return async (request: Request): Promise<Response> => {
@@ -75,6 +84,8 @@ export function createHandler(
     const headers: Record<string, string> = {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
+      "CDN-Cache-Control": "no-store",
+      "Netlify-CDN-Cache-Control": "no-store",
       "X-Request-Id": requestId,
     };
     const json = (body: unknown, status = 200) =>
@@ -157,10 +168,32 @@ export function createHandler(
           ),
         );
       }
+      const dashboardSession = () =>
+        (dependencies.dashboardAuth ?? getDashboardAuth)();
+      if (operation.id === "redeemDashboardSession") {
+        requireDashboardOrigin(request);
+        const input = operation.body!.parse(await readBody(request)) as {
+          ticket: string;
+        };
+        headers["Set-Cookie"] = dashboardCookie(
+          await dashboardSession().redeem(input.ticket),
+        );
+        return json({ ok: true });
+      }
+      if (operation.id === "logoutDashboard") {
+        requireDashboardOrigin(request);
+        await dashboardSession().logout(request);
+        headers["Set-Cookie"] = dashboardCookie("", 0);
+        return json({ ok: true });
+      }
       const { accountId: account } = await (
-        dependencies.authenticate ??
-        ((req: Request) =>
-          (dependencies.accounts ?? getAccountService)().authenticate(req))
+        operation.dashboard && !request.headers.has("authorization")
+          ? (req: Request) => dashboardSession().authenticate(req)
+          : (dependencies.authenticate ??
+              ((req: Request) =>
+                (dependencies.accounts ?? getAccountService)().authenticate(
+                  req,
+                )))
       )(request);
       for (const id of match.slice(1)) Id.parse(id);
       const query = operation.query?.parse(
@@ -169,6 +202,48 @@ export function createHandler(
       const body = operation.body
         ? operation.body.parse(await readBody(request))
         : undefined;
+      if (operation.id === "createDashboardSession") {
+        const connection = await (
+          dependencies.connections ?? getConnectionService
+        )().get(account);
+        if (!connection.ready)
+          throw new HttpError(
+            409,
+            "connection_pending",
+            "Finish connection setup first.",
+          );
+        return json(
+          operation.response.parse(await dashboardSession().launch(account)),
+        );
+      }
+      if (operation.dashboard) {
+        const credentials = await (
+          dependencies.accounts ?? getAccountService
+        )().credentials(account);
+        const connection = await (
+          dependencies.connections ?? getConnectionService
+        )(credentials.qaToken).get(account);
+        if (!connection.ready)
+          throw new HttpError(
+            409,
+            "connection_pending",
+            "Finish connection setup first.",
+          );
+        const data = (dependencies.dashboardData ?? dashboardData)(
+          qaClient({
+            ...process.env,
+            REPLAY_QA_API_TOKEN: credentials.qaToken,
+          }),
+        );
+        const input = (query ?? {}) as { page?: number; day?: string };
+        const result =
+          operation.id === "dashboardOverview"
+            ? await data.overview(connection)
+            : operation.id === "dashboardBugs"
+              ? await data.bugs(connection, input.page!)
+              : await data.reports(connection, input.day);
+        return json(operation.response.parse(result));
+      }
       // Planned routes authenticate and validate requests, but never pretend to queue work.
       // No resource data is exposed by this response and no provider request is made.
       if (!operation.implemented)
