@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
+import { operations } from "../src/api/contracts.ts";
 import * as transport from "../packages/capture/src/transport.ts";
 const NetworkAuxiliaryPayloadSchema = z.object({
   exchanges: z.array(
@@ -175,6 +176,9 @@ const UploadSchema = z.object({
       ).payload,
       { name: manifest.name, version: manifest.version },
     );
+    operations
+      .find((operation) => operation.id === "ingestSession")!
+      .body!.parse(JSON.parse(initialBody));
     const initialRegistration = UploadSchema.parse(JSON.parse(uploads[0]!));
     releaseSlow();
     await startup;

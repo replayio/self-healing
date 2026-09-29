@@ -5,6 +5,8 @@ import { PGlite } from "@electric-sql/pglite";
 import { credentialVault } from "../src/api/credentials.ts";
 import { connectionService } from "../src/api/connections.ts";
 import { createHandler } from "../src/api/handler.ts";
+import { getOpenApiSpec } from "../src/api/openapi.ts";
+import { splitBatches } from "../packages/capture/src/transport.ts";
 import { qaClient } from "../src/api/qa.ts";
 
 const vault = credentialVault(Buffer.alloc(32, 7).toString("base64"));
@@ -448,6 +450,114 @@ test("report status reads never invoke QA's destructive manual rerun API", async
         (c) => c.path.includes("summarizers") && c.body !== undefined,
       ).length,
       1,
+    );
+  } finally {
+    await f.db.close();
+  }
+});
+
+test("package producer metadata passes HTTP validation and is forwarded unchanged to QA", async () => {
+  const f = await fixture();
+  try {
+    await f.service.connect(f.account, "customer-key", settings);
+    const handle = createHandler({
+      authenticate: async () => ({ accountId: f.account }),
+      connections: () => f.service,
+      accounts: () => ({
+        credentials: async () => ({
+          subtextKey: "customer-key",
+          qaToken: "qa-token",
+        }),
+        authenticate: async () => ({ accountId: f.account }),
+        provisionAccount: async () => {
+          throw new Error("not used");
+        },
+      }),
+    });
+    const manifest = JSON.parse(
+      await readFile(
+        new URL("../packages/capture/package.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    const producer = {
+      namespace: "session",
+      key: "capture-producer",
+      schema_version: 1,
+      payload: { name: manifest.name, version: manifest.version },
+    };
+    const artifacts = [
+      producer,
+      {
+        namespace: "session",
+        key: "metrics",
+        schema_version: 1,
+        payload: { version: 1, interaction_count: 1 },
+      },
+    ];
+    const [batch] = splitBatches({
+      session_url: sessionUrl,
+      auxiliary_data: artifacts,
+    });
+    const post = (body: string) =>
+      handle(
+        new Request("https://healing.example/api/v1/connection/sessions", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer account-key",
+            "content-type": "application/json",
+          },
+          body,
+        }),
+      );
+    const response = await post(batch!);
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal((await response.json()).status, "stored");
+    const registrations = () =>
+      f.calls.filter((call) => call.path === "/api/project-session/register");
+    assert.deepEqual(
+      (registrations()[0]!.body as { auxiliary_data: unknown }).auxiliary_data,
+      artifacts,
+    );
+    assert.equal((await post(batch!)).status, 200);
+    assert.equal(
+      registrations().length,
+      1,
+      "identical package uploads remain idempotent",
+    );
+    for (const invalid of [
+      { ...producer, namespace: "network" },
+      { ...producer, key: "unknown" },
+      { ...producer, schema_version: 2 },
+    ]) {
+      const rejected = await post(
+        JSON.stringify({ session_url: sessionUrl, auxiliary_data: [invalid] }),
+      );
+      assert.equal(rejected.status, 400);
+    }
+    assert.equal(registrations().length, 1, "invalid artifacts never reach QA");
+    const spec = getOpenApiSpec().paths["/api/v1/connection/sessions"]!
+      .post as {
+      requestBody: {
+        content: {
+          "application/json": {
+            schema: {
+              properties: {
+                auxiliary_data: {
+                  items: { properties: { key: { enum: string[] } } };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+    assert.ok(
+      spec.requestBody.content[
+        "application/json"
+      ].schema.properties.auxiliary_data.items.properties.key.enum.includes(
+        "capture-producer",
+      ),
     );
   } finally {
     await f.db.close();

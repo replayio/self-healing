@@ -222,6 +222,7 @@ export const AuxiliaryArtifact = z
       "metrics",
       "identity",
       "capture-context",
+      "capture-producer",
     ]),
     schema_version: z.literal(1),
     payload: z.record(z.unknown()),
@@ -232,7 +233,7 @@ export const AuxiliaryArtifact = z
       ({
         network: ["captured-exchanges"],
         interaction: ["captured-interactions"],
-        session: ["metrics", "identity", "capture-context"],
+        session: ["metrics", "identity", "capture-context", "capture-producer"],
       })[artifact.namespace].includes(artifact.key),
     "Unsupported auxiliary namespace/key pair",
   );
