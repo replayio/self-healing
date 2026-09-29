@@ -200,6 +200,7 @@ export interface Operation {
   implemented: boolean;
   public?: boolean;
   dashboard?: boolean;
+  pipeline?: boolean;
   body?: z.ZodTypeAny;
   query?: z.ZodTypeAny;
   response: z.ZodTypeAny;
@@ -247,7 +248,96 @@ const ConnectionResponse = object({
   status: z.enum(["connected", "pending"]),
 });
 const connectionPath = "/api/v1/connection";
+function reportWebhook(channel: "slack" | "discord") {
+  return z
+    .string()
+    .trim()
+    .url()
+    .max(2048)
+    .refine(
+      (value) => {
+        let url: URL;
+        try {
+          url = new URL(value);
+        } catch {
+          return false;
+        }
+        if (
+          url.protocol !== "https:" ||
+          url.username ||
+          url.password ||
+          url.port ||
+          url.search ||
+          url.hash
+        )
+          return false;
+        return channel === "slack"
+          ? url.hostname === "hooks.slack.com" &&
+              /^\/services\/[^/]+\/[^/]+\/[^/]+$/.test(url.pathname)
+          : /^(?:(?:canary|ptb)\.)?discord(?:app)?\.com$/.test(url.hostname) &&
+              /^\/api\/webhooks\/\d+\/[^/]+$/.test(url.pathname);
+      },
+      `Use a valid HTTPS ${channel === "slack" ? "Slack incoming" : "Discord channel"} webhook URL`,
+    );
+}
+export const ReportDestinationUpdate = z
+  .object({
+    email: z
+      .object({
+        addresses: z.array(z.string().trim().email().max(320)).min(1).max(100),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    slack: z
+      .object({ webhook_url: reportWebhook("slack") })
+      .strict()
+      .nullable()
+      .optional(),
+    discord: z
+      .object({ webhook_url: reportWebhook("discord") })
+      .strict()
+      .nullable()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Supply at least one destination to update",
+  );
+export const ReportDestinations = z.object({
+  email: z
+    .object({
+      recipients: z.enum(["custom", "owner", "members"]),
+      addresses: z.array(z.string()),
+    })
+    .nullable(),
+  slack: z.object({ webhook_url_set: z.boolean() }).nullable(),
+  discord: z.object({ webhook_url_set: z.boolean() }).nullable(),
+});
 const connectionOperations: Operation[] = [
+  {
+    id: "getReportDestinations",
+    method: "GET",
+    path: connectionPath + "/report-destinations",
+    summary: "Read the destinations for completed daily reports",
+    implemented: true,
+    response: ReportDestinations,
+    description:
+      "Reads this account's QA project configuration. Webhook URLs are never returned. Configuration is not proof of delivery.",
+  },
+  {
+    id: "updateReportDestinations",
+    method: "PATCH",
+    path: connectionPath + "/report-destinations",
+    summary: "Configure email, Slack or Discord delivery of daily reports",
+    implemented: true,
+    body: ReportDestinationUpdate,
+    response: ReportDestinations,
+    description:
+      "Updates only supplied channels; omitted channels are preserved and null disables a channel. Email uses explicit custom addresses, not the QA service account owner. Slack/Discord webhook URLs are write-only secrets. QA delivers future completed daily reports; saving does not send a test message or prove delivery.",
+  },
+
   {
     id: "connect",
     method: "POST",
@@ -333,14 +423,14 @@ export const agentSkills = [
     id: "setup-self-healing",
     name: "Set up Self Healing",
     description:
-      "Provision an account, connect this project, install session capture, and verify delivery of real session captures to Self Healing.",
+      "Provision an account, connect this project, install session capture, choose daily report destinations, and verify delivery of real session captures to Self Healing.",
     path: "/api/v1/skills/setup-self-healing/SKILL.md",
   },
   {
     id: "operate-self-healing",
     name: "Operate Self Healing",
     description:
-      "Forward session captures, read automatic reviews and daily reports, and handle retries and blocked work.",
+      "Monitor bugs every 15 minutes, triage reports, record WONTFIX reasons, create fix PRs, and verify previews with QA through Self Healing.",
     path: "/api/v1/skills/operate-self-healing/SKILL.md",
   },
 ] as const;
@@ -380,7 +470,77 @@ export const DashboardBug = z.object({
   severity: z.string(),
   status: z.string(),
   discovered_at: z.string(),
-  url: HttpsUrl,
+  url: z.string().startsWith("/dashboard?tab=bugs&bug="),
+  kind: z.string().nullable(),
+  fix_prs: z.array(
+    z.object({
+      repo_full_name: z.string(),
+      pr_number: z.number().int().positive(),
+      url: HttpsUrl,
+      state: z.string().nullable(),
+    }),
+  ),
+});
+export const DashboardBugDetail = DashboardBug.extend({
+  description: z.string().nullable(),
+  reproduction_steps: z.string().nullable(),
+  expected_behavior: z.string().nullable(),
+  actual_behavior: z.string().nullable(),
+  notes: z.string().nullable(),
+  resolution: z.string().nullable(),
+  analysis: z
+    .object({
+      impact: z.string().nullish(),
+      root_cause: z.object({ text: z.string() }).nullish(),
+      chain: z.array(z.object({ text: z.string() })).optional(),
+      chronology: z
+        .array(
+          z.object({
+            text: z.string().optional(),
+            screenshot_url: HttpsUrl.nullable().optional(),
+          }),
+        )
+        .optional(),
+    })
+    .nullable(),
+});
+// Provider IDs are opaque QA identifiers, not local UUIDs.
+export const QAId = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/);
+export const PipelineBug = DashboardBugDetail.extend({
+  test_run_id: QAId.nullable(),
+  recording_urls: z.array(HttpsUrl),
+  fix_reference: HttpsUrl,
+});
+export const VerificationInput = z
+  .object({
+    bug_id: QAId,
+    pr_url: z
+      .string()
+      .url()
+      .regex(
+        /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/pull\/[1-9][0-9]*$/,
+      ),
+    head_sha: Sha,
+    preview_url: HttpsUrl,
+  })
+  .strict();
+export const BugVerification = VerificationInput.extend({
+  run_id: QAId,
+  status: z.string(),
+  outcome_status: z.string().nullable(),
+  outcome_reason: z.string().nullable(),
+  bugs_found_count: Count,
+  recording_urls: z.array(HttpsUrl),
+  created_at: z.string(),
+});
+export const BugVerifications = z.object({
+  items: z.array(BugVerification),
+  page: Count,
+  has_more: z.boolean(),
 });
 export const DashboardOverview = z.object({
   name: z.string(),
@@ -443,10 +603,72 @@ export const DashboardReports = z.object({
 
 export const operations: Operation[] = [
   {
+    id: "pipelineBugs",
+    method: "GET",
+    path: "/api/v1/connection/bugs",
+    pipeline: true,
+    implemented: true,
+    summary: "List open bugs for factory triage",
+    query: z
+      .object({ page: z.coerce.number().int().min(1).max(100000).default(1) })
+      .strict(),
+    response: DashboardBugs,
+  },
+  {
+    id: "pipelineBug",
+    method: "GET",
+    path: "/api/v1/connection/bug",
+    pipeline: true,
+    implemented: true,
+    summary: "Read a bug report and recording references",
+    query: z.object({ bug_id: QAId }).strict(),
+    response: PipelineBug,
+  },
+  {
+    id: "pipelineWontfix",
+    method: "POST",
+    path: "/api/v1/connection/bugs/wontfix",
+    pipeline: true,
+    implemented: true,
+    summary: "Dismiss a bug with an evidence-backed reason",
+    body: z
+      .object({ bug_id: QAId, reason: z.string().trim().min(1).max(20000) })
+      .strict(),
+    response: PipelineBug,
+  },
+  {
+    id: "pipelineVerify",
+    method: "POST",
+    path: "/api/v1/connection/bug-verifications",
+    pipeline: true,
+    implemented: true,
+    summary: "Rerun a bug's original QA journey against a preview",
+    description:
+      "Requires an available original journey. Stores PR/head/preview references in the QA run goal; the factory must confirm the deployed preview matches the SHA. Creation is not idempotent: after an uncertain response, list runs before retrying. Does not mark the bug fixed or attest to the preview's commit.",
+    body: VerificationInput,
+    response: BugVerification,
+    status: 201,
+  },
+  {
+    id: "pipelineVerifications",
+    method: "GET",
+    path: "/api/v1/connection/bug-verifications",
+    pipeline: true,
+    implemented: true,
+    summary: "Read preview verification runs for a bug",
+    query: z
+      .object({
+        bug_id: QAId,
+        page: z.coerce.number().int().min(1).max(100000).default(1),
+      })
+      .strict(),
+    response: BugVerifications,
+  },
+  {
     id: "createDashboardSession",
     method: "POST",
     path: "/api/v1/dashboard-sessions",
-    summary: "Create a single-use dashboard launch link",
+    summary: "Create a dashboard launch link",
     implemented: true,
     response: z.object({
       url: HttpsUrl,
@@ -454,7 +676,7 @@ export const operations: Operation[] = [
       session_ttl_seconds: z.literal(86400),
     }),
     description:
-      "Call server-side with the account bearer key. The link expires in five minutes, is single-use, and establishes a read-only browser session lasting 24 hours. Do not publish launch links; request a fresh one when needed.",
+      "Call server-side with the account bearer key. The link can be opened multiple times for five minutes. Each opening establishes a read-only browser session lasting 24 hours. Do not publish launch links; request a fresh one when needed.",
   },
   {
     id: "redeemDashboardSession",
@@ -466,7 +688,7 @@ export const operations: Operation[] = [
     body: z.object({ ticket: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
     response: z.object({ ok: z.literal(true) }),
     description:
-      "Browser-only exchange. Requires the same Origin as this service. Consumes the ticket and sets a Secure, HttpOnly, SameSite=Lax cookie.",
+      "Browser-only exchange. Requires the same Origin as this service. Creates an independent browser session and sets a Secure, HttpOnly, SameSite=Lax cookie without consuming the link.",
   },
   {
     id: "logoutDashboard",
@@ -496,12 +718,30 @@ export const operations: Operation[] = [
     method: "GET",
     path: "/api/v1/dashboard/bugs",
     dashboard: true,
-    summary: "List open bugs with QA report links",
+    summary: "List open bugs with kinds, fix PRs and dashboard report links",
     implemented: true,
     query: z
       .object({ page: z.coerce.number().int().min(1).max(100000).default(1) })
       .strict(),
     response: DashboardBugs,
+  },
+  {
+    id: "dashboardBug",
+    method: "GET",
+    path: "/api/v1/dashboard/bug",
+    dashboard: true,
+    summary: "Read a bug report belonging to the connected project",
+    implemented: true,
+    query: z
+      .object({
+        bug_id: z
+          .string()
+          .min(1)
+          .max(256)
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
+      })
+      .strict(),
+    response: DashboardBugDetail,
   },
   {
     id: "dashboardReports",

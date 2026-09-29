@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   DashboardOverview,
   DashboardBugs,
+  DashboardBugDetail,
   DashboardReports,
   type DashboardBug,
 } from "../api/contracts";
@@ -347,6 +348,133 @@ function OverviewTab() {
     </>
   );
 }
+const kindLabels: Record<string, string> = {
+  testing: "Testing",
+  "network-performance": "Network Performance",
+  "react-rendering": "React Rendering",
+  "layout-shift": "Layout Shift",
+  glitches: "Glitches",
+  "user-experience": "User Experience",
+  accessibility: "Accessibility",
+  "ui-details": "UI Details",
+  "detail-journeys": "UI Details",
+  seo: "SEO",
+  security: "Security",
+};
+function bugKind(kind: string | null) {
+  return kind ? (kindLabels[kind] ?? kind.replaceAll("-", " ")) : "—";
+}
+function FixPRs({ bug }: { bug: Bug }) {
+  return bug.fix_prs.length ? (
+    <div className="dh-fix-prs">
+      {bug.fix_prs.map((pr) => (
+        <a key={pr.url} href={pr.url} target="_blank" rel="noopener noreferrer">
+          {pr.repo_full_name}#{pr.pr_number}
+          {pr.state ? ` · ${pr.state}` : ""} ↗
+        </a>
+      ))}
+    </div>
+  ) : (
+    <>—</>
+  );
+}
+export function BugReport({
+  bug,
+}: {
+  bug: z.infer<typeof DashboardBugDetail>;
+}) {
+  const sections = [
+    ["Description", bug.description],
+    ["Actual behavior", bug.actual_behavior],
+    ["Expected behavior", bug.expected_behavior],
+    ["Reproduction steps", bug.reproduction_steps],
+    ["Impact", bug.analysis?.impact],
+    ["Root cause", bug.analysis?.root_cause?.text],
+    ["Notes", bug.notes],
+    ["Resolution", bug.resolution],
+  ];
+  return (
+    <>
+      <div className="dh-title-row">
+        <div>
+          <a href="/dashboard?tab=bugs">← Open bugs</a>
+          <h1>{bug.title}</h1>
+          <p>
+            {bugKind(bug.kind)} · {bug.severity} · {bug.status} · Detected{" "}
+            {date(bug.discovered_at)}
+          </p>
+        </div>
+      </div>
+      <article className="dh-panel dh-report-body dh-bug-report">
+        <section>
+          <h2>Fix pull requests</h2>
+          <FixPRs bug={bug} />
+        </section>
+        {sections.map(([label, value]) =>
+          value ? (
+            <section key={label}>
+              <h2>{label}</h2>
+              <p className="dh-prose">{value}</p>
+            </section>
+          ) : null,
+        )}
+        {!!bug.analysis?.chronology?.length && (
+          <section>
+            <h2>Walkthrough</h2>
+            <ol>
+              {bug.analysis.chronology.map((step, i) => (
+                <li className="dh-prose" key={i}>
+                  {step.text}
+                  {step.screenshot_url && (
+                    <a
+                      href={step.screenshot_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <img
+                        className="dh-bug-screenshot"
+                        src={step.screenshot_url}
+                        alt={`Walkthrough step ${i + 1}`}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+        {!!bug.analysis?.chain?.length && (
+          <section>
+            <h2>Causal chain</h2>
+            <ol>
+              {bug.analysis.chain.map((step, i) => (
+                <li className="dh-prose" key={i}>
+                  {step.text}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+      </article>
+    </>
+  );
+}
+function BugDetailPage({ id }: { id: string }) {
+  const result = useData(
+    `bug?bug_id=${encodeURIComponent(id)}`,
+    DashboardBugDetail,
+  );
+  return result.data ? (
+    <BugReport bug={result.data} />
+  ) : (
+    <>
+      <a href="/dashboard?tab=bugs">← Open bugs</a>
+      <LoadState {...result}>Loading bug report…</LoadState>
+    </>
+  );
+}
 export function BugTable({ bugs }: { bugs: Bug[] }) {
   return (
     <div className="dh-table-scroll">
@@ -354,7 +482,9 @@ export function BugTable({ bugs }: { bugs: Bug[] }) {
         <thead>
           <tr>
             <th>Bug</th>
+            <th>Kind</th>
             <th>Severity</th>
+            <th>Pull requests</th>
             <th>Detected</th>
           </tr>
         </thead>
@@ -362,17 +492,18 @@ export function BugTable({ bugs }: { bugs: Bug[] }) {
           {bugs.map((b) => (
             <tr key={b.id}>
               <td>
-                <a href={b.url} target="_blank" rel="noopener noreferrer">
-                  {b.title}
-                  <span aria-hidden="true"> ↗</span>
-                </a>
+                <a href={b.url}>{b.title}</a>
               </td>
+              <td>{bugKind(b.kind)}</td>
               <td>
                 <span
                   className={`dh-severity dh-severity-${["critical", "high", "medium", "low"].includes(b.severity) ? b.severity : "low"}`}
                 >
                   {b.severity}
                 </span>
+              </td>
+              <td>
+                <FixPRs bug={b} />
               </td>
               <td>
                 <time dateTime={b.discovered_at}>{date(b.discovered_at)}</time>
@@ -392,9 +523,7 @@ function BugsTab() {
       <div className="dh-title-row">
         <div>
           <h1>Open bugs</h1>
-          <p>
-            Open a bug report in Replay QA to see its evidence and reproduction.
-          </p>
+          <p>Read bug reports and follow linked fix pull requests.</p>
         </div>
         <button
           className="dh-icon-button"
@@ -602,6 +731,9 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>(
     tabs.includes(initial as Tab) ? (initial as Tab) : "overview",
   );
+  const [bugId, setBugId] = useState(
+    new URLSearchParams(window.location.search).get("bug"),
+  );
   const [ready, setReady] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
@@ -612,6 +744,7 @@ export default function Dashboard() {
   useEffect(() => {
     const pop = () => {
       const value = new URLSearchParams(window.location.search).get("tab");
+      setBugId(new URLSearchParams(window.location.search).get("bug"));
       setTab(tabs.includes(value as Tab) ? (value as Tab) : "overview");
     };
     window.addEventListener("popstate", pop);
@@ -619,6 +752,7 @@ export default function Dashboard() {
   }, []);
   function navigate(value: Tab) {
     setTab(value);
+    setBugId(null);
     window.history.pushState(null, "", `/dashboard?tab=${value}`);
   }
   async function logout() {
@@ -676,7 +810,11 @@ export default function Dashboard() {
         ) : tab === "overview" ? (
           <OverviewTab />
         ) : tab === "bugs" ? (
-          <BugsTab />
+          bugId ? (
+            <BugDetailPage id={bugId} />
+          ) : (
+            <BugsTab />
+          )
         ) : (
           <ReportsTab />
         )}

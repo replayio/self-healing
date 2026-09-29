@@ -13,8 +13,8 @@ and call `initCapture`; they do not embed browser producers. The package initial
 produces version-1 auxiliary artifacts, batches uploads to a configurable same-origin route, and
 reports failures through `onError`/`flush`. QA consumes the artifact contract independently and
 can preserve optional `session/capture-producer` package/version provenance without importing the
-package. The browser has no account or provider credential. Publishing the npm package is explicit
-and must precede deploying installer instructions for a new version.
+package. The browser has no account or provider credential. `npm run capture:publish` tests, builds and publishes the package locally using interactive npm
+login and 2FA. Existing registry versions are skipped; GitHub Actions does not publish releases.
 
 ## Ownership
 
@@ -49,16 +49,24 @@ See [the connection protocol](obvious-integration.md) for provisioning recovery,
 3. **Ingestion and analysis.** Use durable background work for session synchronization and analysis; normalize evidence references and bugs without storing raw recordings. Persist provider cursors, deduplication keys, retries, and normalized errors.
 4. **Factory coordination.** Implement durable append-ordered events and transactional, expiring bug claims. Multiple workers must not fix the same active claim. Return 409 for claim conflicts and 410 when an event cursor has expired. Specify retention before enabling the event stream.
 5. **Fix and release QA.** Register factory-created PRs, queue QA against their preview URL and exact head SHA, and retain run evidence. Only a provider result may move a fix to `verified`. A new head invalidates the old verification. Verify webhook signatures (if webhooks are used), project ownership, repository/PR association, and delivery deduplication. Reconcile merges/closures with GitHub. Do not give clients a setter for `verified`.
-6. **Reports.** Persist report jobs, period boundaries, behavior trends, friction points, source evidence, new bugs, and fix progress. Schedule daily/weekly generation from saved preferences. Deliver via configured email/Slack integrations with retries and observable delivery failures. The connection API configures QA’s daily scheduler. No delivery worker runs in Self Healing.
+6. **Reports.** Persist report jobs, period boundaries, behavior trends, friction points, source evidence, new bugs, and fix progress. Schedule daily/weekly generation from saved preferences. Deliver via configured email/Slack integrations with retries and observable delivery failures. The connection API configures QA’s daily scheduler. The connection report-destinations API configures email, Slack and Discord delivery through QA’s existing project settings. QA owns webhook storage and sends completed summaries; Self Healing does not persist those credentials or run a delivery worker.
 
 Long-running provider work belongs in a durable queue/worker, not a Netlify request. Planned 202 responses require persisted jobs before returning success. Before enabling POST workflows, implement and document account-scoped idempotency keys, timeout/retry rules, and reconciliation. Use restricted provider endpoints; do not fetch arbitrary configuration URLs from the request handler.
 
 ## Remaining production work
 
-This setup has QA and Subtext adapters, but no automatic session discovery, Self Healing background retry worker, delivery integrations, automatic GitHub PR creation, account self-service, rate limiting, or production observability. The factory owns PR authoring, so automatic PR creation is not required inside this service. The Netlify site and Neon database are provisioned. The Infisical/GitHub machine-identity configuration remains an operator setup step. Health reports process liveness only.
+This setup has QA and Subtext adapters, but no automatic session discovery, Self Healing background retry worker, automatic GitHub PR creation, account self-service, rate limiting, or production observability. The factory owns PR authoring, so automatic PR creation is not required inside this service. The Netlify site and Neon database are provisioned. The Infisical/GitHub machine-identity configuration remains an operator setup step. Health reports process liveness only.
 
 ## Dashboard
 
-The dashboard uses the existing account-to-connection scope and dedicated QA credential. A factory exchanges its bearer key for a five-minute, single-use launch ticket. The browser exchanges that ticket for a 24-hour Secure/HttpOnly cookie; cookie authentication is accepted only by the read-only dashboard routes, never by connection/configuration APIs or launch-link creation. See [dashboard.md](dashboard.md) for data definitions and rollout.
+The dashboard uses the existing account-to-connection scope and dedicated QA credential. A factory exchanges its bearer key for a five-minute reusable launch link. The browser exchanges that ticket for a 24-hour Secure/HttpOnly cookie; cookie authentication is accepted only by the read-only dashboard routes, never by connection/configuration APIs or launch-link creation. See [dashboard.md](dashboard.md) for data definitions and rollout.
 
-Migration `005_dashboard_sessions.sql` adds hashed, expiring launch/browser tokens. Atomic token rotation provides single-use redemption across Netlify instances. This table stores authentication metadata only; dashboard queries read QA directly and do not persist reports or session contents.
+Migration `005_dashboard_sessions.sql` adds hashed, expiring launch/browser tokens. Each opening atomically checks the launch expiry and creates an independent browser token, leaving the launch link usable until its original expiry. This table stores authentication metadata only; dashboard queries read QA directly and do not persist reports or session contents.
+
+## Factory bug pipeline
+
+The operating skill uses account-key-only connection APIs to list/read bugs, record WONTFIX reasons through QA's existing bug update API, and rerun a bug's original saved journey/version against a preview through QA's test-run API. All bug, source run, journey and result reads check ownership against the authenticated connection. Dashboard cookies cannot use these routes.
+
+Verification metadata (bug, PR, head SHA and preview URL) lives in the durable QA run goal. Self Healing adds no recording store or verification table. Run outcomes and recording references are projected from QA, never manufactured. The supplied head SHA is a factory assertion; the factory must verify the deployment's commit and inspect actual reproduction coverage. There is no setter for a verified verdict. Creation is not idempotent; after uncertain writes the factory must reconcile paginated runs before retrying. A bug without an available original journey is explicitly unverifiable through this endpoint.
+
+The factory schedules polling (suggested every 15 minutes), coordinates one worker per bug, tracks PRs and verification run IDs, and follows the repository's merge policy. This does not implement the legacy claim/event/managed-fix contracts.

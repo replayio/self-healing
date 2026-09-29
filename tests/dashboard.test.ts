@@ -8,7 +8,7 @@ import { createHandler } from "../src/api/handler.ts";
 import { accountService } from "../src/api/accounts.ts";
 import { connectionService, type Connection } from "../src/api/connections.ts";
 import { credentialVault } from "../src/api/credentials.ts";
-import { qaClient } from "../src/api/qa.ts";
+import { qaClient, QARequestError } from "../src/api/qa.ts";
 import { HttpError } from "../src/api/errors.ts";
 
 const origin = "https://healing.example";
@@ -49,7 +49,7 @@ async function fixture() {
 const cookieRequest = (token: string) =>
   new Request(origin, { headers: { cookie: `${DASHBOARD_COOKIE}=${token}` } });
 
-test("dashboard links expire, rotate atomically once, and persist only hashes", async () => {
+test("dashboard links open independent browser sessions without consumption or expiry extension", async () => {
   const f = await fixture();
   try {
     const link = await f.auth.launch(account);
@@ -65,12 +65,35 @@ test("dashboard links expire, rotate atomically once, and persist only hashes", 
     );
     assert.ok(!stored.includes(ticket));
     await assert.rejects(f.auth.authenticate(cookieRequest(ticket)), HttpError);
-    const results = await Promise.allSettled([
+    const [token, second] = await Promise.all([
       f.auth.redeem(ticket),
       f.auth.redeem(ticket),
     ]);
-    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
-    const token = results.find((r) => r.status === "fulfilled")!.value;
+    assert.notEqual(token, second);
+    assert.deepEqual(await f.auth.authenticate(cookieRequest(second)), {
+      accountId: account,
+    });
+    const [launch] = await f.query(
+      "SELECT expires_at FROM dashboard_sessions WHERE kind='launch'",
+      [],
+    );
+    assert.equal(
+      (launch!.expires_at as Date).toISOString(),
+      link.expires_at,
+    );
+    await f.auth.logout(cookieRequest(second));
+    await assert.rejects(f.auth.authenticate(cookieRequest(second)), HttpError);
+    await assert.rejects(f.auth.redeem(token), HttpError);
+    const third = await f.auth.redeem(ticket);
+    assert.deepEqual(await f.auth.authenticate(cookieRequest(third)), {
+      accountId: account,
+    });
+    await f.query(
+      "UPDATE dashboard_sessions SET expires_at=now()-interval '1 second' WHERE kind='launch'",
+      [],
+    );
+    await assert.rejects(f.auth.redeem(ticket), HttpError);
+    // Link expiry and another browser's logout do not end this browser session.
     assert.ok(
       !JSON.stringify(
         await f.query("SELECT * FROM dashboard_sessions", []),
@@ -85,7 +108,7 @@ test("dashboard links expire, rotate atomically once, and persist only hashes", 
       HttpError,
     );
     const [duration] = await f.query(
-      "SELECT EXTRACT(EPOCH FROM expires_at-now()) AS seconds FROM dashboard_sessions",
+      "SELECT EXTRACT(EPOCH FROM expires_at-now()) AS seconds FROM dashboard_sessions WHERE kind='browser'",
       [],
     );
     assert.ok(Number(duration!.seconds) > 86390);
@@ -155,6 +178,14 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
       dashboardAuth: () => f.auth,
       dashboardData: (qa) => ({
         ...dashboardData(qa),
+        bug: async (c, id) => {
+          assert.equal(c.account_id, account);
+          assert.equal(c.qa_project_id, "qa-one");
+          return dashboardData(async () => ({
+            ...sampleBug(id),
+            project_id: "qa-one",
+          })).bug(c, id);
+        },
         bugs: async (c) => {
           assert.equal(c.account_id, account);
           providerCalls.push(c.qa_project_id!);
@@ -237,6 +268,18 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
     assert.equal(read.headers.get("netlify-cdn-cache-control"), "no-store");
     assert.deepEqual(providerCalls, ["qa-one"]);
     assert.ok(!(await read.text()).includes("token"));
+    const detail = await call("/api/v1/dashboard/bug?bug_id=bug-1", { cookie });
+    assert.equal(detail.status, 200);
+    assert.equal((await detail.json()).id, "bug-1");
+    assert.equal(
+      (await call("/api/v1/dashboard/bug?bug_id=bug-1")).status,
+      401,
+    );
+    for (const query of ["", "?bug_id=..", "?bug_id=bug-1&project_id=qa-two"])
+      assert.equal(
+        (await call("/api/v1/dashboard/bug" + query, { cookie })).status,
+        400,
+      );
     assert.equal((await call("/api/v1/connection", { cookie })).status, 401);
     assert.equal(
       (await call("/api/v1/dashboard-sessions", { method: "POST", cookie }))
@@ -385,11 +428,7 @@ test("overview follows QA pagination, deduplicates sessions and overlaps, and co
             ],
     };
   };
-  const result = await dashboardData(
-    request,
-    "https://qa.example",
-    now,
-  ).overview(connection);
+  const result = await dashboardData(request, now).overview(connection);
   assert.equal(result.sessions, 105);
   assert.equal(result.open_bugs, 101);
   assert.equal(result.closed_bugs, 1);
@@ -420,7 +459,7 @@ test("reports adapt QA opened_at and retain evidence bug links without exposing 
     assert.equal(p.get("id"), connection.id);
     assert.equal(p.get("project_id"), connection.qa_project_id);
     assert.equal(p.get("day"), "2026-09-28");
-    const { discovered_at, ...b } = sampleBug("bug/example");
+    const { discovered_at, ...b } = sampleBug("bug-example");
     return {
       older: "2026-09-26",
       newer: "2026-09-29",
@@ -460,13 +499,10 @@ test("reports adapt QA opened_at and retain evidence bug links without exposing 
         sources: [{ secret: "not-forwarded" }],
       },
     };
-  }, "https://qa.example");
+  });
   const result = await data.reports(connection, "2026-09-28");
-  assert.equal(
-    result.run!.bugs[0]!.url,
-    "https://qa.example/projects/qa-one/bugs/bug%2Fexample",
-  );
-  assert.equal(result.run!.output!.findings[0]!.bugs[0]!.id, "bug/example");
+  assert.equal(result.run!.bugs[0]!.url, "/dashboard?tab=bugs&bug=bug-example");
+  assert.equal(result.run!.output!.findings[0]!.bugs[0]!.id, "bug-example");
   assert.equal(result.older, "2026-09-26");
   assert.ok(!JSON.stringify(result).includes("private"));
   assert.ok(!JSON.stringify(result).includes("not-forwarded"));
@@ -502,4 +538,106 @@ test("dashboard uses dedicated QA bearer and fails visibly on malformed or faile
     }).overview(connection),
     /Unavailable/,
   );
+});
+
+test("bug lists expose QA kinds and fix PRs with local report URLs", async () => {
+  const result = await dashboardData(async () => ({
+    total: 3,
+    items: [
+      {
+        ...sampleBug("polish"),
+        polish_category: "security",
+        test_run_id: "run",
+        fix_prs: [
+          {
+            repo_full_name: "replayio/example",
+            pr_number: 42,
+            pr_state: "closed",
+            merged_at: "2026-09-29T00:00:00Z",
+            verification_detail: "private",
+          },
+        ],
+      },
+      { ...sampleBug("test"), test_run_id: "run" },
+      sampleBug("legacy"),
+    ],
+  })).bugs(connection, 1);
+  assert.deepEqual(
+    result.items.map((b) => b.kind),
+    ["security", "testing", null],
+  );
+  assert.equal(result.items[0]!.url, "/dashboard?tab=bugs&bug=polish");
+  assert.deepEqual(result.items[0]!.fix_prs, [
+    {
+      repo_full_name: "replayio/example",
+      pr_number: 42,
+      state: "merged",
+      url: "https://github.com/replayio/example/pull/42",
+    },
+  ]);
+  assert.deepEqual(result.items[1]!.fix_prs, []);
+});
+
+test("bug detail checks project ownership and returns report content without provider metadata", async () => {
+  const raw = {
+    ...sampleBug("bug-1"),
+    project_id: "qa-one",
+    description: "Description",
+    reproduction_steps: "Click checkout",
+    expected_behavior: "Payment succeeds",
+    actual_behavior: "Payment fails",
+    notes: "Note",
+    wontfix_reason: null,
+    callback_url: "private",
+    analysis: {
+      root_cause: {
+        text: "Root cause",
+        evidence: [{ params: { token: "private" } }],
+      },
+      chain: [{ text: "Cause", secret: "private" }],
+      chronology: [
+        {
+          text: "Click",
+          evidence: [
+            {
+              tool: "Screenshot",
+              result:
+                "https://static.replay.io/recordings/recording/analysis/screenshot-100.jpg",
+              params: { token: "private" },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const data = dashboardData(async (path) => {
+    assert.equal(path, "/api/bugs/bug-1");
+    return raw;
+  });
+  const result = await data.bug(connection, "bug-1");
+  assert.equal(result.description, "Description");
+  assert.equal(result.analysis?.root_cause?.text, "Root cause");
+  assert.equal(
+    result.analysis?.chronology?.[0]?.screenshot_url,
+    "https://static.replay.io/recordings/recording/analysis/screenshot-100.jpg",
+  );
+  assert.ok(!JSON.stringify(result).includes("private"));
+  await assert.rejects(
+    data.bug({ ...connection, qa_project_id: "qa-two" }, "bug-1"),
+    (e: HttpError) => e.status === 404,
+  );
+  await assert.rejects(
+    dashboardData(async () => ({ ...raw, id: "another" })).bug(
+      connection,
+      "bug-1",
+    ),
+    (e: HttpError) => e.status === 404,
+  );
+  for (const status of [403, 404, 500])
+    await assert.rejects(
+      dashboardData(async () => {
+        throw new QARequestError(status);
+      }).bug(connection, "bug-1"),
+      (e: HttpError) => e.status === (status === 500 ? 503 : 404),
+    );
 });

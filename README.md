@@ -8,11 +8,15 @@ This repository follows Loop QA's React/Vite frontend, TypeScript Netlify functi
 
 The connection API implements the first session-processing slice: one QA identity per provisioned account and one QA project per connected account, encrypted retained credentials, auxiliary upload forwarding, automatic reviews after upload inactivity, daily reports, and a scoped QA→Self Healing→Subtext gateway. It uses QA’s existing APIs and session-source callbacks, and requires runtime credentials; it has not been validated against a live customer Subtext account.
 
-Start with [Obvious integration and rollout](docs/obvious-integration.md). The older `/projects/*` configuration API remains available, but its provider, fix-PR, event-stream and notification operations still return explicit `501 not_implemented`. This is not yet the complete self-healing PR factory.
+Start with [Obvious integration and rollout](docs/obvious-integration.md). The older `/projects/*` configuration API remains available, but its provider, fix-PR, event-stream and notification operations still return explicit `501 not_implemented`. The [operating skill](public/api/v1/skills/operate-self-healing/SKILL.md) guides a factory through periodic bug triage, WONTFIX dispositions, fix PRs and preview verification using the implemented connection APIs. The factory owns scheduling, PR authoring and merge decisions.
 
 ## Dashboard
 
-Factories call `POST /api/v1/dashboard-sessions` with their account bearer key and give the returned `url` to the user. Links expire after five minutes and can be used once. The `/dashboard` browser session lasts 24 hours and has read-only access to Overview, Bugs, and Reports. No API key is placed in the browser or URL. See [dashboard behavior and data definitions](docs/dashboard.md).
+Factories call `POST /api/v1/dashboard-sessions` with their account bearer key and give the returned `url` to the user. Links can be opened multiple times until they expire after five minutes. The `/dashboard` browser session lasts 24 hours and has read-only access to Overview, Bugs, and Reports. No API key is placed in the browser or URL. See [dashboard behavior and data definitions](docs/dashboard.md).
+
+## Daily report delivery
+
+Setup looks for an existing project reporting destination and asks the user when a suitable channel, recipient, or credential is missing. `GET` and `PATCH /api/v1/connection/report-destinations` configure email, Slack, or Discord through the connected QA project's existing delivery API. Only supplied channels change; webhook URLs are write-only. QA owns storage and delivery of completed daily reports. No new Self Healing secrets, tables, or delivery worker are needed.
 
 ## Capture package
 

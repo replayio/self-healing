@@ -1,6 +1,6 @@
 ---
 name: setup-self-healing
-description: Guide a coding agent through account provisioning, project connection, session capture, and verification that real user sessions reach Self Healing.
+description: Guide a coding agent through account provisioning, project connection, report destinations, session capture, and verification that real user sessions reach Self Healing.
 ---
 
 # Set up Self Healing for this project
@@ -13,7 +13,7 @@ Use the origin from which you downloaded this skill as `SELF_HEALING_URL`. Resol
 
 Inspect the project's framework, server routes, deployment configuration, secret manager, and existing Fullstory/capture integration. Reuse existing instrumentation rather than installing a second copy. Identify the production HTTPS URL and a readable project name. Locate any existing `SELF_HEALING_API_KEY` in its secret manager without printing its value. Do not create a new account when an existing working one is available.
 
-Initial setup supports session ingestion, QA reviews, reproduction journeys requested by friction reviews, and daily behavior reports. Providing a key does not discover historical sessions or install browser capture. Automatic fix-PR orchestration, event streams, delivery integrations, and other routes marked `planned` are not implemented; do not present saved configuration or a 501 response as working functionality.
+Initial setup supports session ingestion, QA reviews, reproduction journeys requested by friction reviews, and daily behavior reports. Providing a key does not discover historical sessions or install browser capture. Automatic fix-PR orchestration, event streams, and other routes marked `planned` are not implemented; do not present saved configuration or a 501 response as working functionality.
 
 ## Provision and store the account key
 
@@ -42,6 +42,30 @@ GET `/api/v1/connection` using the account key. If it is connected, reuse its ID
 Recover interrupted setup by repeating that exact POST. Save the chosen name and URL in project configuration so retries use identical values. The connection creates one QA project for the account and configures reviews and daily reports. Different settings return 409; do not create a replacement account to bypass this conflict. The older `/api/v1/projects` configuration API is not a substitute for connection provisioning.
 
 A connected response confirms configuration; verify session delivery after installing capture. QA project creation can start initial exploration, and QA work requires credit capacity. Report quota or credit blocks to the user/service operator; do not promise free or unlimited work.
+
+## Choose where daily reports should go
+
+As part of setup, look for a suitable destination for this project's daily reports: an existing team Slack or Discord channel, or a user/team email address. Inspect the project's existing notification configuration, connected integrations, and server-side secret store. Reuse an established project reporting destination when its purpose and access are clear. Do not guess recipients from unrelated repository metadata or choose an arbitrary channel.
+
+First GET `/api/v1/connection/report-destinations` with the account key. Preserve suitable destinations that are already configured. If none is suitable, the choice is ambiguous, or you need an email address or webhook credential, ask the user which email address or Slack/Discord channel should receive the reports. Use secure secret input for webhook URLs. If they decline delivery, leave it unconfigured and say so.
+
+Configure the chosen destination with PATCH `/api/v1/connection/report-destinations`. Supply only the channels you are changing:
+
+```json
+{"email":{"addresses":["team@example.com"]}}
+```
+
+```json
+{"slack":{"webhook_url":"<Slack incoming webhook URL for the chosen channel>"}}
+```
+
+```json
+{"discord":{"webhook_url":"<Discord webhook URL for the chosen channel>"}}
+```
+
+Replace examples with actual project destinations. An existing Slack/Discord connection can help identify a channel, but this API needs that channel's webhook URL, not a bot token or channel ID. Omitted channels are preserved; setting a channel to `null` disables it. Multiple destinations are supported when appropriate. Email uses explicit addresses because the QA service account is not the user's mailbox; do not rely on QA `owner` or `members` recipients.
+
+Confirm the saved settings with GET on the same path. Responses expose email recipients and `webhook_url_set` flags, never webhook URLs. Keep webhook credentials server-side and out of completion messages. QA sends completed daily reports to these destinations. Saving confirms configuration, not message delivery; do not wait for a report or send test messages as part of setup.
 
 ## Install the capture package
 
@@ -125,7 +149,7 @@ Setup is complete when the deployed application's real session captures are succ
 1. Run the target project's relevant tests/build and deploy using its normal workflow and permissions. If deployment requires user action, report that boundary and provide the concrete change for review.
 2. Exercise a real session in the deployed application: make a fetch request, click or enter input, and exercise the existing identity hook if the app has one. Verify that the installed package uploads the resulting session URL and captured artifacts through the application's forwarding route. FullStory recording alone or a hand-crafted metadata-only upload does not verify this path.
 3. Confirm that the forwarding route receives Self Healing's successful response from `POST /api/v1/connection/sessions`: HTTP 200 with `status: "stored"` and a nonempty `session_id`. The route must pass that response back to the package. Verify the uploads containing the exercised network and interaction events succeed, rather than checking only an initial metadata batch. Check that the account key stays server-side and the route uses the app's intended access controls.
-4. Report the deployed integration, the test session URL, and Self Healing's returned session ID and ingestion status. If delivery fails, report the failed request's status/error and fix the capture or forwarding problem before declaring setup complete. Never include API keys or secret callback URLs.
+4. Report the deployed integration, the test session URL, Self Healing's returned session ID and ingestion status, and the configured report destination (or whether it was declined or still needs user input). If delivery fails, report the failed request's status/error and fix the capture or forwarding problem before declaring setup complete. Never include API keys or secret callback URLs.
 
 Once delivery is verified, declare setup complete and open the dashboard for the user as described below. Do not wait for the session to go quiet, poll QA reviewers, or wait for a daily report. Do not schedule those checks as setup follow-ups or hold the setup handoff for them. Continue forwarding capture batches normally; no completion request or recording shutdown is needed.
 
@@ -133,10 +157,10 @@ For separately requested ongoing operation, read `/api/v1/skills/operate-self-he
 
 ## Open the dashboard
 
-When setup is complete, call `POST /api/v1/dashboard-sessions` server-side with the Self Healing account bearer key (no body required). Open the returned `url` for the user in the way most appropriate to your environment: use a user-visible browser tab or app navigation tool when available. If you cannot open it directly, present a clickable **Open dashboard** link in your completion message. Do not wait for the user to ask.
+When setup is complete, call `POST /api/v1/dashboard-sessions` with the server-side account key and open the returned `url` for the user in the most appropriate way available. If you cannot open it directly, provide a clickable **Open dashboard** link. Generate a fresh link for the handoff; if it expires before the user opens it, request another. Keep the account key server-side.
 
-Generate the link immediately before this handoff, rather than storing it in project configuration. Open it in the user's browser context; do not consume the single-use link in a private automation browser before handing it to them.
+The dashboard has Overview, Bugs, and Reports tabs. Overview shows bug counts and daily session activity; Bugs shows kinds, fix PRs, and bug reports within Self Healing; Reports lets the user cycle through daily reports. No separate signup or QA project access is needed.
 
-The link is single-use and expires after five minutes. Opening it establishes a read-only browser session for 24 hours. The account key stays in the factory's secret store; do not put it in a URL or browser code. If the link was already used or expired, create another. Opening a link for a different project switches the dashboard to that project's resources in that browser.
+## Run the ongoing pipeline
 
-The dashboard has Overview, Bugs, and Reports tabs. Overview shows bug counts and daily session activity; Bugs links to existing QA bug reports; Reports lets the user cycle through daily reports. No separate signup is needed. The QA report links use QA's existing access rules.
+After setup, follow [operate-self-healing](../operate-self-healing/SKILL.md) to arrange periodic bug triage (suggested every 15 minutes), record WONTFIX reasons for unsuitable reports, create fix PRs, and verify them against previews with QA. Setup acceptance remains delivery of real session inputs; do not wait for the first bug or report to complete setup.

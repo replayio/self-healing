@@ -21,9 +21,15 @@ export function getOpenApiSpec() {
     if (operation.query) {
       const query = schema(operation.query) as {
         properties?: Record<string, unknown>;
+        required?: string[];
       };
       for (const [name, value] of Object.entries(query.properties ?? {})) {
-        parameters.push({ name, in: "query", required: false, schema: value });
+        parameters.push({
+          name,
+          in: "query",
+          required: query.required?.includes(name) ?? false,
+          schema: value,
+        });
       }
     }
     const responses: Record<string, unknown> = {};
