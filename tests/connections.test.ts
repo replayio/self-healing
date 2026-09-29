@@ -48,7 +48,7 @@ async function fixture() {
       return { items: projects, total: projects.length };
     if (path.endsWith("/integrations/fullstory"))
       return {
-        instructions: "Use Bearer lqs_registration-token in the server proxy.",
+        registration_token: "lqs_registration-token",
       };
     if (path === "/api/project-session/register") {
       assert.equal(token, "lqs_registration-token");

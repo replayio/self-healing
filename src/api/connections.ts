@@ -1,3 +1,4 @@
+import { qaSessionCredential } from "./qa-session-credential.ts";
 import { randomUUID } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { z } from "zod";
@@ -138,29 +139,15 @@ export function connectionService(
           c = await get(account);
         }
         if (!c.encrypted_ingest_token) {
-          const setup = z
-            .object({ instructions: z.string() })
-            .parse(
-              await qa(
-                `/api/v1/projects/${encodeURIComponent(c.qa_project_id!)}/integrations/fullstory`,
-                {},
-              ),
-            );
-          // QA currently returns the one-time token in its installation guide, not a structured field.
-          const tokens = [
-            ...new Set(
-              setup.instructions.match(/\blqs_[A-Za-z0-9_-]+\b/g) ?? [],
+          const token = qaSessionCredential(
+            await qa(
+              `/api/v1/projects/${encodeURIComponent(c.qa_project_id!)}/integrations/fullstory`,
+              {},
             ),
-          ];
-          if (tokens.length !== 1)
-            throw new HttpError(
-              503,
-              "qa_contract_changed",
-              "QA setup did not return one registration token.",
-            );
+          );
           await query(
             "UPDATE connections SET encrypted_ingest_token=$2 WHERE id=$1",
-            [c.id, vault.encrypt(tokens[0]!, c.account_id)],
+            [c.id, vault.encrypt(token, c.account_id)],
           );
         }
         for (const reviewer of [

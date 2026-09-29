@@ -8,7 +8,7 @@ The initial service is a coordination layer. It does not become another session-
 
 ## Capture implementation
 
-`packages/capture` owns the `@replayio/self-healing-capture` npm package. Setup skills install it
+`packages/capture` contains the temporary `@replayio/self-healing-capture` implementation until Subtext supplies the required auxiliary accessors. Self Healing skills own all installation instructions and install it
 and call `initCapture`; they do not embed browser producers. The package initializes FullStory,
 produces version-1 auxiliary artifacts, batches uploads to a configurable same-origin route, and
 reports failures through `onError`/`flush`. QA consumes the artifact contract independently and

@@ -45,7 +45,7 @@ A connected response confirms configuration, not a successful review. QA project
 
 ## Install the capture package
 
-The capture implementation is maintained in [`@replayio/self-healing-capture`](https://www.npmjs.com/package/@replayio/self-healing-capture). Install it; do not copy or generate a fetch wrapper. Its [package README](https://github.com/replayio/self-healing/tree/main/packages/capture) documents its API and supported capture behavior.
+This skill owns the complete installation procedure. [`@replayio/self-healing-capture`](https://www.npmjs.com/package/@replayio/self-healing-capture) is a temporary implementation until Subtext provides all the accessors needed for auxiliary data. For now, install it; do not copy or generate a fetch wrapper. When those accessors are available, the replacement and migration instructions will live here. QA accepts the compatible data format through its APIs; it provides no application installer or session-configuration UI.
 
 1. Inspect the application for an existing FullStory initialization or copied capture shim. Replace that shim with this package, preserving the existing organization ID and identity hook. There must be one recorder/FullStory initialization.
 2. If the app has no FullStory organization, run `npx @subtextdev/subtext-wizard` to select the organization accessible through the Subtext key used to provision this account.
@@ -71,6 +71,18 @@ capture.identify({ id: user.id, name: user.name, email: user.email })
 ```
 
 The package owns network, interaction, identity, metrics and session-context generation, timestamps, session rollover, batching and retries. Preserve the app's existing capture policy. Do not add a generic field-redaction layer. Keep dependencies locked and upgrade the package to receive capture fixes.
+
+### Capture behavior and lifecycle
+
+The package captures fetch requests (browser-visible headers and bodies), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization and endpoint reuses the controller.
+
+- `capture.identify({id, name, email})` connects the app’s existing authentication hook to capture.
+- `await capture.flush()` waits for in-flight captures and pending uploads. It rejects if FullStory has no session yet or a capture/upload failed.
+- `await capture.stop()` stops new auxiliary capture, removes listeners, and flushes pending data. It does not stop FullStory or complete the server session. It cannot restart on that page; subsequent `identify()` calls do nothing.
+
+Uploads use the original fetch so they do not capture themselves. The package retries network errors, 429s, server errors, and `upload_busy` up to three attempts with identical bodies and event IDs. Session rollover keeps ownership of requests already in flight. `captured_at` is Unix milliseconds and `source_timestamp` is page-relative milliseconds; installers do not generate these fields.
+
+Capture retains the existing producer limits: bodies above 1 MB become null, network bodies have an 8 MB budget per page/session, and network and interaction counts each stop at 5,000 entries per page/session. Dropped counts appear in capture context. The package emits version-1 artifacts and `session/capture-producer` metadata identifying its name and version; this metadata is provenance, not authentication.
 
 ## Forward captures through Self Healing
 

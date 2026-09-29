@@ -64,7 +64,7 @@ async function fixture() {
             path === "/api/v1/projects"
               ? { id: `project-${bearer.slice(-1)}` }
               : path.endsWith("/integrations/fullstory")
-                ? { instructions: "Bearer lqs_ingestion" }
+                ? { registration_token: "lqs_ingestion" }
                 : { ok: true };
           return Response.json(result);
         }),
