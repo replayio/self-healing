@@ -3,6 +3,8 @@ name: operate-self-healing
 description: Operate Self Healing's session reviews and daily reports through its account-key-authenticated API.
 ---
 
+Discover the API and all available skills at `/api/v1` and `/api/v1/skills` on this same origin. For a new project, first follow `/api/v1/skills/setup-self-healing/SKILL.md`.
+
 Always call Self Healing with the account API key returned by provisionAccount, from a server-side secret store. The Subtext key is supplied only during provisioning. Never give either key to QA, the browser, or logs.
 
 - GET `/api/v1/connection` to check provisioning. Retry the original POST after interrupted provisioning; do not invent a replacement key/project.

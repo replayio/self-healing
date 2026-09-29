@@ -20,6 +20,8 @@ The initial service is a coordination layer. It does not become another session-
 
 The static React/Vite site is published to `dist`; Netlify rewrites `/api/*` to one TypeScript function. Published skill files shadow the non-forced API rewrite. Unknown API paths return JSON 404s rather than an SPA fallback. No provider keys are included in the frontend bundle.
 
+`GET /api/v1` provides public API discovery and the initial setup skill URL. `GET /api/v1/skills` lists the downloadable skills from the registry in `contracts.ts`; OpenAPI uses that same registry. The landing page provides a copyable prompt using its current origin so agents start with the intended deployment. Skills guide real setup and verification without treating pending provider work as success.
+
 `contracts.ts` is the source for runtime input validation, route discovery, response types, and generated OpenAPI. Cross-field refinements (e.g. a PR run needs a PR URL) are also enforced at runtime. Provider-backed routes are marked `planned` in OpenAPI and will return 501 after authentication/input validation once identity resolution is available, without touching provider resources. Their success schemas describe the intended interface, not fake responses.
 
 Neon stores project metadata and version-independent configuration documents. Every query includes the account ID derived from a bearer key; the composite configuration foreign key also enforces account/project ownership. Migrations are explicit operator actions. Configuration PUTs replace one document atomically and use last-write-wins semantics. A sightmap includes its source commit SHA. Report preferences use UTC and specify a weekday for weekly delivery.

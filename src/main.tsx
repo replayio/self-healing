@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 
@@ -25,6 +25,16 @@ const apiGroups = [
   ],
 ];
 function App() {
+  const prompt = `Read the API at ${window.location.origin}/api/v1 and follow its setup skill to set up Self Healing for this project.`;
+  const [copyStatus, setCopyStatus] = useState("");
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopyStatus("Copied. Paste it into Obvious or your coding agent.");
+    } catch {
+      setCopyStatus("Select the prompt above and copy it manually.");
+    }
+  }
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -73,6 +83,33 @@ function App() {
             <a className="secondary" href="/api/v1/openapi.json">
               Explore the API ↗
             </a>
+          </div>
+          <div className="setup-prompt">
+            <label htmlFor="setup-prompt">
+              Paste this into Obvious or your coding agent
+            </label>
+            <textarea
+              id="setup-prompt"
+              readOnly
+              value={prompt}
+              onFocus={(event) => event.currentTarget.select()}
+              rows={3}
+              spellCheck={false}
+            />
+            <div className="prompt-actions">
+              <button className="button" type="button" onClick={copyPrompt}>
+                Copy setup prompt
+              </button>
+              <a
+                className="text-link"
+                href="/api/v1/skills/setup-self-healing/SKILL.md"
+              >
+                Preview the setup skill ↗
+              </a>
+            </div>
+            <p className="copy-status" role="status">
+              {copyStatus}
+            </p>
           </div>
           <p className="preview-note">
             Provision an account, connect its QA project, send captured
@@ -125,35 +162,26 @@ function App() {
           </div>
           <ol className="setup-list">
             <li>
-              <h3>Connect your repository</h3>
+              <h3>Give your agent the prompt</h3>
               <p>
-                Install your factory and its GitHub app on the app you maintain.
-                Give it access to create branches and pull requests.
+                Your agent reads the API and setup skill, inspects this project,
+                and asks for any missing setup information.
               </p>
             </li>
             <li>
-              <h3>Configure your account and key</h3>
+              <h3>Connect your account</h3>
               <p>
-                POST your Subtext key to /api/v1/accounts. Store the returned
-                Self Healing API key in your factory’s secret store and use it
-                for subsequent calls. Each account gets a dedicated QA identity.
+                Supply a Subtext key through your agent’s secure secret input.
+                The agent provisions a Self Healing account and stores its
+                returned API key on your server.
               </p>
             </li>
             <li>
-              <h3>Register the project and its context</h3>
+              <h3>Verify a real session</h3>
               <p>
-                Use the connection API to create your QA project, then save your
-                repository, deployment URLs, product context, repository
-                sightmap, QA preferences, and report destinations.
-              </p>
-            </li>
-            <li>
-              <h3>Enable monitoring and the fix loop</h3>
-              <p>
-                Send sessions and auxiliary events through your server to Self
-                Healing. Complete each session to request QA reviews, then
-                retrieve the results and daily reports. The automated fix-PR
-                loop is still planned.
+                The agent connects the project, installs session capture and
+                auxiliary-event forwarding, then checks a completed session’s QA
+                review. Daily reports follow through the same API.
               </p>
             </li>
           </ol>
@@ -177,20 +205,19 @@ function App() {
               </article>
             ))}
           </div>
-          <div className="code-panel">
-            <div>
-              <h3>Connect your key</h3>
-              <p>
-                Use your deployed service URL and your Self Healing account API
-                key. Discover request and response schemas in OpenAPI.
-              </p>
-              <a href="/api/v1/skills/operate-self-healing/SKILL.md">
-                Read the operation skill ↗
-              </a>
-            </div>
-            <pre>
-              <code>{`curl "$SELF_HEALING_URL/api/v1/connection" \\\n  -H "Authorization: Bearer $SELF_HEALING_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "name": "My app",\n    "production_url": "https://app.example.com"\n  }'`}</code>
-            </pre>
+          <div className="skill-links" aria-label="Agent resources">
+            <a href="/api/v1">
+              API starting point <span>Discovery and authentication</span>
+            </a>
+            <a href="/api/v1/skills">
+              Skill catalog <span>All available skills as JSON</span>
+            </a>
+            <a href="/api/v1/skills/setup-self-healing/SKILL.md">
+              Setup skill <span>Initial integration and verification</span>
+            </a>
+            <a href="/api/v1/skills/operate-self-healing/SKILL.md">
+              Operation skill <span>Session reviews and daily reports</span>
+            </a>
           </div>
           <p className="contract-note">
             The connection API requires QA callback support and server

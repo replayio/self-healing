@@ -5,6 +5,7 @@ import { HttpError } from "./errors.ts";
 import { type Authenticator } from "./subtext.ts";
 import { z } from "zod";
 import {
+  agentSkills,
   configurations,
   Id,
   operations,
@@ -124,6 +125,28 @@ export function createHandler(
       const { operation, match } = route;
       if (operation.id === "health")
         return json({ status: "ok", version: "0.1.0", stage: "scaffold" });
+      if (operation.id === "discoverApi")
+        return json(
+          operation.response.parse({
+            name: "Self Healing",
+            openapi_url: new URL("/api/v1/openapi.json", url).href,
+            skills_url: new URL("/api/v1/skills", url).href,
+            setup_skill_url: new URL(agentSkills[0].path, url).href,
+            instructions:
+              "Read the setup skill and OpenAPI specification, then follow the skill to set up this project. Skills are public and do not require credentials.",
+            authentication:
+              "Provision with a Subtext key using POST /api/v1/accounts. Save the returned Self Healing API key and use it as the bearer credential for subsequent calls. Never place either key in browser code.",
+          }),
+        );
+      if (operation.id === "listSkills")
+        return json(
+          operation.response.parse({
+            skills: agentSkills.map(({ path, ...skill }) => ({
+              ...skill,
+              url: new URL(path, url).href,
+            })),
+          }),
+        );
       if (operation.id === "provisionAccount") {
         const input = operation.body!.parse(await readBody(request)) as {
           subtext_api_key: string;

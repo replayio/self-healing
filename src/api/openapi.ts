@@ -1,6 +1,6 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { type z } from "zod";
-import { ErrorResponse, operations } from "./contracts.ts";
+import { agentSkills, ErrorResponse, operations } from "./contracts.ts";
 
 const schema = (value: z.ZodTypeAny) =>
   zodToJsonSchema(value, { target: "openApi3", $refStrategy: "none" });
@@ -77,11 +77,12 @@ export function getOpenApiSpec() {
       responses,
     };
   }
-  for (const name of ["setup-self-healing", "operate-self-healing"]) {
-    paths[`/api/v1/skills/${name}/SKILL.md`] = {
+  for (const skill of agentSkills) {
+    paths[skill.path] = {
       get: {
-        operationId: name,
-        summary: `Read ${name} agent skill`,
+        operationId: skill.id,
+        summary: skill.name,
+        description: skill.description,
         security: [],
         responses: {
           200: {
@@ -100,6 +101,11 @@ export function getOpenApiSpec() {
       description:
         "Factories provision with a Subtext key, then authenticate with the returned Self Healing account key. Each account has a dedicated QA identity. The connection API provisions one QA project per account and mediates session ingestion, reviews and daily reports. QA accesses Subtext through Self Healing. Legacy project provider operations remain explicit 501 contracts. Retry connection and session requests with identical bodies.",
     },
+    externalDocs: {
+      description: "Start here: read the setup skill to configure this project",
+      url: agentSkills[0].path,
+    },
+    "x-agent-skills": { catalog: "/api/v1/skills", setup: agentSkills[0].path },
     servers: [{ url: "/" }],
     paths,
     components: {
