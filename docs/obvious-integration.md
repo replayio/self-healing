@@ -2,22 +2,33 @@
 
 ## Connection
 
-Obvious's server supplies the user's Subtext API key. No customer-facing Self Healing key is issued.
+First provision an account:
+
+```http
+POST /api/v1/accounts
+Content-Type: application/json
+
+{"subtext_api_key":"<Subtext API key>"}
+```
+
+The `provisionAccount` operation validates the provider key and returns `{"account_id":"<uuid>","api_key":"sh_..."}`. Store `api_key` in Obvious's server-side secret store. Every subsequent call uses it as the bearer credential. Never send the Subtext key as authorization to connection/project/review/report endpoints.
+
+Provisioning is idempotent per validated Subtext key: retries return the same account/key and dedicated QA identity. Different keys produce separate accounts. Possession of a valid Subtext key permits recovery of its account key through provisioning. Account key rotation/revocation is not implemented in this slice. A lost QA issuance response returns `provisioning_pending` on retry; it never blindly issues a second token.
 
 ```sh
 curl "$SELF_HEALING_URL/api/v1/connection" \
-  -H "Authorization: Bearer $SUBTEXT_API_KEY" \
+  -H "Authorization: Bearer $SELF_HEALING_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"name":"My app","production_url":"https://app.example.com"}'
 ```
 
-Repeat this exact request to recover a timeout or provisioning failure. If QA has no matching project after a creation attempt, Self Healing returns `provisioning_pending` rather than risking a duplicate. An operator must confirm the original request did not create a project before clearing `create_attempted`; do not blindly reset it. Each validated key maps to one connection UUID and one QA project ID. Setup serializes requests in Self Healing and uses a stable marker in the QA project name to reconcile lost creation responses. Different settings for the same key return 409 rather than silently creating a second project. `GET /api/v1/connection` returns provisioning state. The QA project belongs to the configured QA service account and starts with a 20-credit project budget; its billing account must have capacity for work to run.
+Repeat this exact request to recover a timeout or provisioning failure. If QA has no matching project after a creation attempt, Self Healing returns `provisioning_pending` rather than risking a duplicate. An operator must confirm the original request did not create a project before clearing `create_attempted`; do not blindly reset it. Each provisioned account maps to one connection UUID and one QA project ID. Setup serializes requests in Self Healing and uses a stable marker in the QA project name to reconcile lost creation responses. Different settings for the same key return 409 rather than silently creating a second project. `GET /api/v1/connection` returns provisioning state. The QA project belongs to the account’s dedicated QA service identity and starts with a 20-credit project budget; its billing account must have capacity for work to run.
 
-Self Healing validates the key against Subtext on each customer request. A keyed fingerprint isolates that key's data. It stores an AES-256-GCM encrypted copy for background QA access, with the fingerprint as authenticated context. The root encryption secret stays in Infisical/Netlify Functions. QA receives only session-scoped callback URLs, never the customer's key. Keys for the same Fullstory organization still make separate connections. Key rotation preserving a connection is not implemented: don't substitute a new key expecting it to find the old project.
+Self Healing validates Subtext only during provisioning. Later requests look up the Self Healing account key locally. Retained provider keys and QA tokens are encrypted with the root secret and bound to the keyed Subtext fingerprint. QA receives session-scoped callback URLs, never the provider key. Different Subtext keys produce different accounts even within the same Fullstory organization; key rotation preserving an account is not implemented.
 
 ## Capture and auxiliary events
 
-Install Fullstory in the user's app. Adapt QA's existing Fullstory capture shim so its **same-origin server proxy** forwards to `POST /api/v1/connection/sessions`. The proxy holds the Subtext key server-side. It must authenticate/authorize its app's capture requests and apply capture masking; never embed the Subtext key in browser code. See QA's `src/guidance/user-session/setup.md` for the capture producers. Use Self Healing as their destination, not QA's session registration route.
+Install Fullstory in the user's app. Adapt QA's existing Fullstory capture shim so its **same-origin server proxy** forwards to `POST /api/v1/connection/sessions`. The proxy holds the Self Healing account key server-side. It must authenticate/authorize its app's capture requests and apply capture masking; never embed either key in browser code. See QA's `src/guidance/user-session/setup.md` for the capture producers. Use Self Healing as their destination, not QA's session registration route.
 
 ```json
 {
@@ -65,9 +76,15 @@ These result endpoints expose QA's native response envelopes. Email/Slack delive
 
 QA must include session-source callback support (#4902). No application-specific setting or secret is required in QA, and existing QA projects retain their behavior.
 
-Add `SELF_HEALING_SECRET` (32 random bytes, base64), `REPLAY_QA_API_TOKEN` (private service account), and optionally `REPLAY_QA_URL` to Self Healing's production Infisical environment. Set `SELF_HEALING_URL` to the public HTTPS origin QA can reach; it defaults to `https://self-healing.replay.io`. Use `https://replay-self-healing.netlify.app` until custom DNS/TLS is ready. CI syncs these only to production Functions. Keep previews isolated. Back up the encryption secret: changing it changes fingerprints and makes stored credentials unreadable.
+Add `SELF_HEALING_SECRET` (32 random bytes, base64), `REPLAY_QA_PROVISIONING_TOKEN` (QA admin token authorized for `/api/admin-service-accounts`), and optionally `REPLAY_QA_URL` to Self Healing's production Infisical environment. Set `SELF_HEALING_URL` to the public HTTPS origin QA can reach; it defaults to `https://self-healing.replay.io`. Use `https://replay-self-healing.netlify.app` until custom DNS/TLS is ready. CI syncs these only to production Functions. Keep previews isolated. Back up the encryption secret: changing it changes fingerprints and makes stored credentials unreadable.
 
-The normal deployment applies `003_session_coordination.sql`. It adds setup state, encrypted QA ingestion credentials, session references, upload digests/receipts, and scoped MCP handles. It does not store recording bodies or auxiliary payloads. Existing connection rows go through setup again to obtain an ingestion token and configure reviews/reports while retaining their QA project ID if present.
+This change also requires QA #4915. The provisioning token is privileged and used exclusively to issue customer-specific QA tokens. Do not install the previously issued shared `service|self-healing` token: it is non-admin and cannot provision identities. The deploy removes the retired `REPLAY_QA_API_TOKEN` variable.
+
+The deployment applies `004_accounts.sql` to store account metadata, encrypted credentials, authentication hashes and provisioning state. Existing Subtext-authenticated connections are not automatically adopted: provision a new account, then connect to create resources under its dedicated QA identity. Old Subtext bearer requests return 401. Existing session callbacks remain valid so already queued work can finish. Review any old QA resources separately before removing them.
+
+If provisioning returns `provisioning_pending`, an operator must inspect QA identity `service|self-healing-<account UUID>`, ensure the original issuance has finished, and revoke any orphaned `Self Healing` token before clearing that account's `qa_issue_attempted` flag. Do not reset an in-flight attempt. The encrypted account key is not accepted until a QA token is durably stored.
+
+The normal deployment also applies `003_session_coordination.sql`. It adds setup state, encrypted QA ingestion credentials, session references, upload digests/receipts, and scoped MCP handles. It does not store recording bodies or auxiliary payloads. Existing connection rows go through setup again to obtain an ingestion token and configure reviews/reports while retaining their QA project ID if present.
 
 Self Healing calls QA's existing APIs:
 

@@ -37,7 +37,7 @@ export function deploymentConfig(env: NodeJS.ProcessEnv) {
   const runtime = Object.fromEntries(
     [
       "SELF_HEALING_SECRET",
-      "REPLAY_QA_API_TOKEN",
+      "REPLAY_QA_PROVISIONING_TOKEN",
       "REPLAY_QA_URL",
       "SELF_HEALING_URL",
     ].flatMap((name) => (env[name] ? [[name, env[name]!]] : [])),
@@ -131,7 +131,8 @@ export async function syncRuntimeSecrets(
   }
   // Remove the retired credential map if an operator previously installed one.
   // This dedicated site no longer accepts these keys in any context.
-  if (records.some((item) => item.key === "SELF_HEALING_API_KEYS")) {
-    await api(`${path}/SELF_HEALING_API_KEYS${query}`, "DELETE");
+  for (const key of ["SELF_HEALING_API_KEYS", "REPLAY_QA_API_TOKEN"]) {
+    if (records.some((item) => item.key === key))
+      await api(`${path}/${key}${query}`, "DELETE");
   }
 }

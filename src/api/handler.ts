@@ -1,7 +1,8 @@
+import { getAccountService } from "./accounts.ts";
 import { getConnectionService } from "./connections.ts";
 import { randomUUID } from "node:crypto";
 import { HttpError } from "./errors.ts";
-import { authenticateSubtext, type Authenticator } from "./subtext.ts";
+import { type Authenticator } from "./subtext.ts";
 import { z } from "zod";
 import {
   configurations,
@@ -65,6 +66,7 @@ export function createHandler(
     store?: () => Store;
     authenticate?: Authenticator;
     connections?: typeof getConnectionService;
+    accounts?: typeof getAccountService;
   } = {},
 ) {
   return async (request: Request): Promise<Response> => {
@@ -122,8 +124,20 @@ export function createHandler(
       const { operation, match } = route;
       if (operation.id === "health")
         return json({ status: "ok", version: "0.1.0", stage: "scaffold" });
+      if (operation.id === "provisionAccount") {
+        const input = operation.body!.parse(await readBody(request)) as {
+          subtext_api_key: string;
+        };
+        return json(
+          await (dependencies.accounts ?? getAccountService)().provisionAccount(
+            input.subtext_api_key,
+          ),
+        );
+      }
       const { accountId: account } = await (
-        dependencies.authenticate ?? authenticateSubtext
+        dependencies.authenticate ??
+        ((req: Request) =>
+          (dependencies.accounts ?? getAccountService)().authenticate(req))
       )(request);
       for (const id of match.slice(1)) Id.parse(id);
       const query = operation.query?.parse(
@@ -141,11 +155,14 @@ export function createHandler(
           `${operation.id} requires a provider adapter that is not implemented yet.`,
         );
       if (operation.path.startsWith("/api/v1/connection")) {
-        const service = (dependencies.connections ?? getConnectionService)();
+        const credentials = await (
+          dependencies.accounts ?? getAccountService
+        )().credentials(account);
+        const service = (dependencies.connections ?? getConnectionService)(
+          credentials.qaToken,
+        );
         if (operation.id === "connect") {
-          const key = /^Bearer ([^\s]+)$/i.exec(
-            request.headers.get("authorization") ?? "",
-          )![1]!;
+          const key = credentials.subtextKey;
           return json(
             await service.connect(
               account,
