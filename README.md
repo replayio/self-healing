@@ -10,6 +10,10 @@ The connection API implements the first session-processing slice: one QA identit
 
 Start with [Obvious integration and rollout](docs/obvious-integration.md). The older `/projects/*` configuration API remains available, but its provider, fix-PR, event-stream and notification operations still return explicit `501 not_implemented`. This is not yet the complete self-healing PR factory.
 
+## Capture package
+
+[`@replayio/self-healing-capture`](packages/capture/README.md) is the source of truth for browser auxiliary-event capture. Installers use its API; QA consumes its versioned artifacts without importing it. See the package README for release instructions.
+
 ## Local development
 
 Use Node 22.13 or newer and npm. No provider account or database is needed to view the landing page, inspect OpenAPI, or run tests.

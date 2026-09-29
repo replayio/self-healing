@@ -21,3 +21,4 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm pack --workspace @replayio/self-healing-capture --pack-destination /tmp
