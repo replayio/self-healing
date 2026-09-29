@@ -76,6 +76,8 @@ Once the current revision's tests and available QA/preview checks pass with adeq
 
 ## Other operations and failures
 
+- `GET /api/v1/connection/report-destinations` reads delivery settings. PATCH the same path to set `email: {addresses: [...]}`, `slack: {webhook_url: ...}`, or `discord: {webhook_url: ...}`. Omitted channels are preserved; `null` disables a channel. QA sends completed daily reports to those destinations. Webhook URLs stay server-side. Configuration is not proof of delivery.
+
 - Session capture forwarding remains installed by the setup skill. Continue forwarding without sending a manual completion request.
 - `GET /api/v1/connection/reports?day=YYYY-MM-DD` reads a daily report; omit `day` for the latest and navigation metadata. Reports are not prerequisites for triage or fixing a reported bug.
 - `POST /api/v1/dashboard-sessions` returns a temporary dashboard URL. Open it for the user in the most appropriate available surface, or provide an **Open dashboard** link.

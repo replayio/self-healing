@@ -248,7 +248,96 @@ const ConnectionResponse = object({
   status: z.enum(["connected", "pending"]),
 });
 const connectionPath = "/api/v1/connection";
+function reportWebhook(channel: "slack" | "discord") {
+  return z
+    .string()
+    .trim()
+    .url()
+    .max(2048)
+    .refine(
+      (value) => {
+        let url: URL;
+        try {
+          url = new URL(value);
+        } catch {
+          return false;
+        }
+        if (
+          url.protocol !== "https:" ||
+          url.username ||
+          url.password ||
+          url.port ||
+          url.search ||
+          url.hash
+        )
+          return false;
+        return channel === "slack"
+          ? url.hostname === "hooks.slack.com" &&
+              /^\/services\/[^/]+\/[^/]+\/[^/]+$/.test(url.pathname)
+          : /^(?:(?:canary|ptb)\.)?discord(?:app)?\.com$/.test(url.hostname) &&
+              /^\/api\/webhooks\/\d+\/[^/]+$/.test(url.pathname);
+      },
+      `Use a valid HTTPS ${channel === "slack" ? "Slack incoming" : "Discord channel"} webhook URL`,
+    );
+}
+export const ReportDestinationUpdate = z
+  .object({
+    email: z
+      .object({
+        addresses: z.array(z.string().trim().email().max(320)).min(1).max(100),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    slack: z
+      .object({ webhook_url: reportWebhook("slack") })
+      .strict()
+      .nullable()
+      .optional(),
+    discord: z
+      .object({ webhook_url: reportWebhook("discord") })
+      .strict()
+      .nullable()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Supply at least one destination to update",
+  );
+export const ReportDestinations = z.object({
+  email: z
+    .object({
+      recipients: z.enum(["custom", "owner", "members"]),
+      addresses: z.array(z.string()),
+    })
+    .nullable(),
+  slack: z.object({ webhook_url_set: z.boolean() }).nullable(),
+  discord: z.object({ webhook_url_set: z.boolean() }).nullable(),
+});
 const connectionOperations: Operation[] = [
+  {
+    id: "getReportDestinations",
+    method: "GET",
+    path: connectionPath + "/report-destinations",
+    summary: "Read the destinations for completed daily reports",
+    implemented: true,
+    response: ReportDestinations,
+    description:
+      "Reads this account's QA project configuration. Webhook URLs are never returned. Configuration is not proof of delivery.",
+  },
+  {
+    id: "updateReportDestinations",
+    method: "PATCH",
+    path: connectionPath + "/report-destinations",
+    summary: "Configure email, Slack or Discord delivery of daily reports",
+    implemented: true,
+    body: ReportDestinationUpdate,
+    response: ReportDestinations,
+    description:
+      "Updates only supplied channels; omitted channels are preserved and null disables a channel. Email uses explicit custom addresses, not the QA service account owner. Slack/Discord webhook URLs are write-only secrets. QA delivers future completed daily reports; saving does not send a test message or prove delivery.",
+  },
+
   {
     id: "connect",
     method: "POST",
@@ -334,7 +423,7 @@ export const agentSkills = [
     id: "setup-self-healing",
     name: "Set up Self Healing",
     description:
-      "Provision an account, connect this project, install session capture, and verify delivery of real session captures to Self Healing.",
+      "Provision an account, connect this project, install session capture, choose daily report destinations, and verify delivery of real session captures to Self Healing.",
     path: "/api/v1/skills/setup-self-healing/SKILL.md",
   },
   {

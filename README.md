@@ -14,6 +14,10 @@ Start with [Obvious integration and rollout](docs/obvious-integration.md). The o
 
 Factories call `POST /api/v1/dashboard-sessions` with their account bearer key and give the returned `url` to the user. Links expire after five minutes and can be used once. The `/dashboard` browser session lasts 24 hours and has read-only access to Overview, Bugs, and Reports. No API key is placed in the browser or URL. See [dashboard behavior and data definitions](docs/dashboard.md).
 
+## Daily report delivery
+
+Setup looks for an existing project reporting destination and asks the user when a suitable channel, recipient, or credential is missing. `GET` and `PATCH /api/v1/connection/report-destinations` configure email, Slack, or Discord through the connected QA project's existing delivery API. Only supplied channels change; webhook URLs are write-only. QA owns storage and delivery of completed daily reports. No new Self Healing secrets, tables, or delivery worker are needed.
+
 ## Capture package
 
 All installation instructions live in the [Self Healing setup skill](public/api/v1/skills/setup-self-healing/SKILL.md). [`@replayio/self-healing-capture`](packages/capture/README.md) temporarily supplies auxiliary capture until Subtext has the required accessors. QA consumes compatible artifacts without importing the package; session configuration is API-only. See the package README for contributor release instructions.
