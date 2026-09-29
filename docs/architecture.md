@@ -13,8 +13,8 @@ and call `initCapture`; they do not embed browser producers. The package initial
 produces version-1 auxiliary artifacts, batches uploads to a configurable same-origin route, and
 reports failures through `onError`/`flush`. QA consumes the artifact contract independently and
 can preserve optional `session/capture-producer` package/version provenance without importing the
-package. The browser has no account or provider credential. The `publish-capture.yml` GitHub workflow publishes new manifest versions from main after tests
-and builds pass; npm authorization must be configured once. Existing registry versions are skipped.
+package. The browser has no account or provider credential. `npm run capture:publish` tests, builds and publishes the package locally using interactive npm
+login and 2FA. Existing registry versions are skipped; GitHub Actions does not publish releases.
 
 ## Ownership
 

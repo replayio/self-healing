@@ -69,37 +69,24 @@ cannot establish that a multi-page FullStory session has ended.
 The source of truth is `packages/capture/src` in `replayio/self-healing`. Changes to producers belong
 here. QA owns its independent ingestion schemas and compatibility tests, not another installer copy.
 
-GitHub Actions owns publishing through `.github/workflows/publish-capture.yml`. A push to `main`
-that changes the package triggers the workflow; it can also be run manually with **Publish capture
-package → Run workflow → main**. It tests, builds, packs, and publishes the manifest's version.
-Already-published versions are skipped, so rerunning is safe. Registry/authentication errors fail
-rather than being mistaken for a missing version.
-
-For a release, update the version in `package.json` and the emitted producer metadata, update the
-root lockfile, and merge. The producer test checks that the metadata matches the manifest. Installers
-receive updates through their normal dependency upgrades and lockfiles.
-
-### One-time npm authorization
-
-For the initial release, the repository can use a GitHub Actions secret named `NPM_TOKEN` with
-permission to publish under `@replayio` (including creating this new package). A CI token must support
-noninteractive publishing under the npm account's policy. GitHub access alone does not grant npm access.
-
-Once the package exists, configure its npm trusted publisher with:
-
-- GitHub organization: `replayio`
-- Repository: `self-healing`
-- Workflow filename: `publish-capture.yml`
-- Allow direct publishing; no GitHub environment name
-
-Then remove `NPM_TOKEN`; the workflow uses GitHub OIDC. It runs only from `main` on GitHub-hosted runners.
-See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
-
-For a local test of the artifact (no publish):
+Publish locally with interactive npm authentication and 2FA:
 
 ```sh
 npm ci
-npm test
-npm run build
-npm pack --workspace @replayio/self-healing-capture --pack-destination /tmp
+npm run capture:publish
 ```
+
+Run from a terminal using Node 22.14+ and an npm account with publishing access to `@replayio`.
+The script checks whether the manifest version exists, runs tests and the production build, packs
+the tested output into a temporary directory, logs into npm if necessary, and publishes that exact
+artifact. npm owns the browser login/security-key/2FA prompts. Credentials and OTPs are not script
+arguments or repository secrets. Follow npm's authentication prompt when it appears.
+
+Use `npm run capture:publish -- --dry-run` to test building and packaging without login or publication.
+Registry errors fail the version check; already-published versions are skipped. After publishing,
+the script checks that the version is visible on npm. If visibility verification fails, rerun: an
+existing version is skipped, never overwritten. Temporary tarballs are removed when the script exits.
+
+For later releases, update the package version and emitted producer metadata together, update the
+root lockfile, and run the script from the reviewed revision. The producer test checks that metadata
+matches the manifest. Installers receive updates through dependency upgrades and their lockfiles.
