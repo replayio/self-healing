@@ -271,7 +271,8 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
     for (const flag of [
       "Secure",
       "HttpOnly",
-      "SameSite=Lax",
+      "SameSite=None",
+      "Partitioned",
       "Max-Age=86400",
       "Path=/",
     ])
@@ -703,4 +704,18 @@ test("bug detail checks project ownership and returns report content without pro
       }).bug(connection, "bug-1"),
       (e: HttpError) => e.status === (status === 500 ? 503 : 404),
     );
+});
+
+test("deployment permits dashboard framing and partitioned logout clears the browser cookie", async () => {
+  const config = await readFile(new URL("../netlify.toml", import.meta.url), "utf8");
+  const rules = config.split("[[headers]]").slice(1);
+  const embedding = rules.filter(rule => rule.includes('Content-Security-Policy = "frame-ancestors *"'));
+  assert.equal(embedding.length, 2);
+  assert.ok(embedding.some(rule => rule.includes('for = "/dashboard"')));
+  assert.ok(embedding.some(rule => rule.includes('for = "/dashboard/"')));
+  assert.ok(rules.some(rule => rule.includes('for = "/*"') && rule.includes('X-Frame-Options = "DENY"')));
+  const { dashboardCookie } = await import("../src/api/dashboard-auth.ts");
+  const cleared = dashboardCookie("", 0);
+  for (const attribute of ["Secure", "HttpOnly", "SameSite=None", "Partitioned", "Path=/", "Max-Age=0"])
+    assert.ok(cleared.includes(attribute));
 });

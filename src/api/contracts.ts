@@ -734,7 +734,7 @@ export const operations: Operation[] = [
     body: z.object({ ticket: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
     response: z.object({ ok: z.literal(true) }),
     description:
-      "Browser-only exchange. Requires the same Origin as this service. Creates an independent browser session and sets a Secure, HttpOnly, SameSite=Lax cookie without consuming the link.",
+      "Browser-only exchange. Requires the same Origin as this service. Creates an independent browser session and sets a Secure, HttpOnly, SameSite=None, Partitioned cookie without consuming the link.",
   },
   {
     id: "logoutDashboard",
