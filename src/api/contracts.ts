@@ -586,6 +586,8 @@ export const DashboardOverview = z.object({
   closed_bugs: Count,
   new_open_bugs: Count,
   sessions: Count,
+  sessions_24h: Count,
+  serious_sessions_24h: Count,
   days: z.array(
     z.object({
       day: DashboardDay,
@@ -800,7 +802,7 @@ export const operations: Operation[] = [
     implemented: true,
     response: DashboardOverview,
     description:
-      "All-time project bug counts by open, fixed, wontfix and invalid status, plus session counts; open means open or reopened. Closed means fixed, wontfix, invalid or pr-closed (unconfirmed bugs are excluded). New open bugs were discovered in the last 24 hours. UTC daily buckets use QA session first-received time. Bug shares use confirmed QA reviewer-associated bugs; serious means the friction reviewer recorded impact=blocked. Sessions with no review are not evidence of success.",
+      "All-time project bug counts by open, fixed, wontfix and invalid status, plus session counts; open means open or reopened. Closed means fixed, wontfix, invalid or pr-closed (unconfirmed bugs are excluded). New open bugs were discovered in the last 24 hours. The rolling last-24-hour session and serious-session counts use first-received timestamps; success rate is the share without a detected serious issue (undefined for zero sessions). UTC daily buckets use QA session first-received time. Bug shares use confirmed QA reviewer-associated bugs; serious means the friction reviewer recorded impact=blocked. Sessions with no review are not evidence of success.",
   },
   {
     id: "dashboardBugs",

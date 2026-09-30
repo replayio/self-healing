@@ -532,6 +532,61 @@ test("overview follows QA pagination, deduplicates sessions and overlaps, and co
   assert.equal(paths.filter((p) => p.startsWith("/api/bugs")).length, 2);
 });
 
+test("overview uses an exact rolling 24-hour window and the graph's serious-error definition", async () => {
+  for (const empty of [false, true]) {
+    const result = await dashboardData(async (path) => {
+      const url = new URL(path, "https://qa.example");
+      const p = url.searchParams;
+      assert.equal(p.get("project_id"), "qa-one");
+      if (url.pathname === "/api/bugs") return { items: [], total: 0 };
+      if (p.get("summary"))
+        return {
+          reviewers: [{ key: "friction-and-recovery" }, { key: "other" }],
+        };
+      if (p.get("sessions"))
+        return {
+          has_more: false,
+          sessions: empty
+            ? []
+            : [
+                ["boundary", "2026-09-28T12:00:00Z"],
+                ["old", "2026-09-28T11:59:59.999Z"],
+                ["future", "2026-09-29T12:00:00.001Z"],
+                ["now", "2026-09-29T12:00:00Z"],
+                ["unreviewed", "2026-09-29T01:00:00Z"],
+                ["deleted", "2026-09-29T02:00:00Z"],
+                ["boundary", "2026-09-28T12:00:00Z"],
+              ].map(([session_id, first_received_at]) => ({
+                session_id,
+                first_received_at,
+              })),
+        };
+      if (!p.get("filter")) return { totals: { total_sessions: 100 } };
+      const deleted = run("deleted", [], "blocked");
+      deleted.output.observations.forEach((o) => {
+        o.code = "removed";
+      });
+      return {
+        totals: { total_sessions: 6 },
+        has_more: false,
+        deleted_codes: ["removed"],
+        runs:
+          p.get("reviewer") === "friction-and-recovery"
+            ? [
+                run("boundary", [], "blocked"),
+                run("old", [], "blocked"),
+                run("future", [], "blocked"),
+                run("now", [], "delayed"),
+                deleted,
+              ]
+            : [run("now", [], "blocked")],
+      };
+    }, now).overview(connection);
+    assert.equal(result.sessions_24h, empty ? 0 : 4);
+    assert.equal(result.serious_sessions_24h, empty ? 0 : 1);
+  }
+});
+
 test("reports adapt QA opened_at and retain evidence bug links without exposing reviewer or provider details", async () => {
   const data = dashboardData(async (path) => {
     const p = new URL(path, "https://qa.example").searchParams;

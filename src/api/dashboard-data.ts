@@ -203,7 +203,7 @@ export function dashboardData(
         both_sessions: 0,
       }));
       const byDay = new Map(days.map((day) => [day.day, day]));
-      const sessionDays = new Map<string, string>();
+      const sessionStarts = new Map<string, number>();
       const reviewed = new Set<string>(),
         withBugs = new Set<string>(),
         serious = new Set<string>();
@@ -256,10 +256,7 @@ export function dashboardData(
               `${reviewerPath(c)}&sessions=1&query=${query}`,
             );
             for (const s of result.sessions)
-              sessionDays.set(
-                s.session_id,
-                new Date(s.first_received_at).toISOString().slice(0, 10),
-              );
+              sessionStarts.set(s.session_id, Date.parse(s.first_received_at));
             if (!result.has_more) break;
           }
         })(),
@@ -299,7 +296,14 @@ export function dashboardData(
           }
         })(),
       ]);
-      for (const [id, day] of sessionDays) {
+      let recentSessions = 0;
+      let recentSeriousSessions = 0;
+      for (const [id, startedAt] of sessionStarts) {
+        if (startedAt >= now - DAY && startedAt <= now) {
+          recentSessions++;
+          if (serious.has(id)) recentSeriousSessions++;
+        }
+        const day = new Date(startedAt).toISOString().slice(0, 10);
         const point = byDay.get(day);
         if (!point) continue;
         point.sessions++;
@@ -311,6 +315,8 @@ export function dashboardData(
       return DashboardOverview.parse({
         name: c.name,
         sessions: total.totals.total_sessions,
+        sessions_24h: recentSessions,
+        serious_sessions_24h: recentSeriousSessions,
         open_bugs: bugCounts.open,
         fixed_bugs: bugCounts.fixed,
         wontfix_bugs: bugCounts.wontfix,
