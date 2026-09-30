@@ -719,10 +719,10 @@ export const operations: Operation[] = [
     response: z.object({
       url: HttpsUrl,
       expires_at: Timestamp,
-      session_ttl_seconds: z.literal(86400),
+      session_ttl_seconds: z.literal(604800),
     }),
     description:
-      "Call server-side with the account bearer key. The link can be opened multiple times for five minutes. Each opening establishes a read-only browser session lasting 24 hours. Do not publish launch links; request a fresh one when needed.",
+      "Call server-side with the account bearer key. The link can be opened multiple times for seven days. Each opening establishes a read-only browser session lasting seven days. Do not publish launch links; request a fresh one when needed.",
   },
   {
     id: "redeemDashboardSession",
@@ -731,7 +731,16 @@ export const operations: Operation[] = [
     public: true,
     summary: "Exchange a launch ticket for a browser cookie",
     implemented: true,
-    body: z.object({ ticket: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+    body: z
+      .object({
+        ticket: z
+          .string()
+          .regex(
+            /^[a-f0-9]{64}$/,
+            "This dashboard link is incomplete or malformed. Ask your factory for a new dashboard link.",
+          ),
+      })
+      .strict(),
     response: z.object({ ok: z.literal(true) }),
     description:
       "Browser-only exchange. Requires the same Origin as this service. Creates an independent browser session and sets a Secure, HttpOnly, SameSite=None, Partitioned cookie without consuming the link.",

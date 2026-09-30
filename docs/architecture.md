@@ -59,7 +59,7 @@ This setup has QA and Subtext adapters, but no automatic session discovery, Self
 
 ## Dashboard
 
-The dashboard uses the existing account-to-connection scope and dedicated QA credential. A factory exchanges its bearer key for a five-minute reusable launch link. The browser exchanges that ticket for a 24-hour Secure/HttpOnly cookie; cookie authentication is accepted only by the read-only dashboard routes, never by connection/configuration APIs or launch-link creation. See [dashboard.md](dashboard.md) for data definitions and rollout.
+The dashboard uses the existing account-to-connection scope and dedicated QA credential. A factory exchanges its bearer key for a seven-day reusable launch link. The browser exchanges that ticket for a seven-day Secure/HttpOnly cookie; cookie authentication is accepted only by the read-only dashboard routes, never by connection/configuration APIs or launch-link creation. See [dashboard.md](dashboard.md) for data definitions and rollout.
 
 Migration `005_dashboard_sessions.sql` adds hashed, expiring launch/browser tokens. Each opening atomically checks the launch expiry and creates an independent browser token, leaving the launch link usable until its original expiry. This table stores authentication metadata only; dashboard queries read QA directly and do not persist reports or session contents.
 

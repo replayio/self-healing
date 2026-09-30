@@ -2,11 +2,11 @@
 
 ## Opening and authentication
 
-Call `POST /api/v1/dashboard-sessions` with the existing Self Healing bearer key after connecting the project. No body is required. The response contains `url`, `expires_at`, and `session_ttl_seconds` (86400). A factory should display the returned URL as **Open dashboard** when requested, rather than saving a permanent link.
+Call `POST /api/v1/dashboard-sessions` with the existing Self Healing bearer key after connecting the project. No body is required. The response contains `url`, `expires_at`, and `session_ttl_seconds` (604800). A factory should display the returned URL as **Open dashboard** when requested, rather than saving a permanent link.
 
-The launch link can be opened multiple times during its five-minute lifetime. Its ticket is in a URL fragment, so it is not sent in HTTP requests or referrers. The dashboard removes it from browser history before POSTing it to `/api/v1/dashboard/redeem`. That same-origin exchange creates a new browser token and sets a Secure, HttpOnly, SameSite=None, Partitioned, host-only cookie. It does not consume or extend the launch link: an agent opening it does not invalidate it for the user.
+The launch link can be opened multiple times during its seven-day lifetime. Its ticket is in a URL fragment, so it is not sent in HTTP requests or referrers. The dashboard keeps it available during redemption and removes it from browser history only after a successful POST to `/api/v1/dashboard/redeem`. That same-origin exchange creates a new browser token and sets a Secure, HttpOnly, SameSite=None, Partitioned, host-only cookie. It does not consume or extend the launch link: an agent opening it does not invalidate it for the user.
 
-Each browser session has an absolute, server-checked 24-hour expiry; refreshing does not extend it. A redemption can be retried while the link is valid. After the link expires, existing browser sessions continue to work, but new openings need a fresh link. Logout deletes only the current browser token; other sessions and a still-valid launch link remain usable. Opening a different project's link switches the current browser's dashboard session to that project.
+Each browser session has an absolute, server-checked seven-day expiry; refreshing does not extend it. A redemption can be retried while the link is valid. After the link expires, existing browser sessions continue to work, but new openings need a fresh link. Logout deletes only the current browser token; other sessions and a still-valid launch link remain usable. Opening a different project's link switches the current browser's dashboard session to that project.
 
 Only dashboard GET routes accept this cookie; launch creation and existing factory APIs still require the bearer key. No provider keys or account API keys are sent to the browser. The launch ticket and browser token are capabilities and should not be published. There is no new signup or user login flow.
 

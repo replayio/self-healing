@@ -20,7 +20,7 @@ function cookieToken(request: Request) {
       ?.slice(DASHBOARD_COOKIE.length + 1) ?? ""
   );
 }
-export function dashboardCookie(value: string, age = 86400) {
+export function dashboardCookie(value: string, age = 604800) {
   return `${DASHBOARD_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=None; Partitioned; Max-Age=${age}`;
 }
 export function requireDashboardOrigin(request: Request) {
@@ -58,7 +58,7 @@ export function dashboardAuth(
       const ticket = token();
       const [row] = await query(
         `INSERT INTO dashboard_sessions(token_hash,account_id,kind,expires_at)
-        VALUES($1,$2,'launch',now()+interval '5 minutes') RETURNING expires_at`,
+        VALUES($1,$2,'launch',now()+interval '7 days') RETURNING expires_at`,
         [hash(ticket), account],
       );
       const expires = z
@@ -68,14 +68,14 @@ export function dashboardAuth(
       return {
         url: new URL(`/dashboard#ticket=${ticket}`, base).href,
         expires_at: expires.toISOString(),
-        session_ttl_seconds: 86400 as const,
+        session_ttl_seconds: 604800 as const,
       };
     },
     async redeem(ticket: string) {
       const session = token();
       const rows = await query(
         `INSERT INTO dashboard_sessions(token_hash,account_id,kind,expires_at)
-        SELECT $2,account_id,'browser',now()+interval '24 hours' FROM dashboard_sessions
+        SELECT $2,account_id,'browser',now()+interval '7 days' FROM dashboard_sessions
         WHERE token_hash=$1 AND kind='launch' AND expires_at > now() RETURNING account_id`,
         [hash(ticket), hash(session)],
       );
@@ -83,7 +83,7 @@ export function dashboardAuth(
         throw new HttpError(
           401,
           "expired_link",
-          "This dashboard link has expired. Request a new link from your factory.",
+          "This dashboard link has expired or is no longer available. Ask your factory for a new dashboard link.",
         );
       return session;
     },

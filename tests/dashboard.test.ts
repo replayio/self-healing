@@ -54,9 +54,9 @@ test("dashboard links open independent browser sessions without consumption or e
   const f = await fixture();
   try {
     const link = await f.auth.launch(account);
-    assert.equal(link.session_ttl_seconds, 86400);
-    assert.ok(Date.parse(link.expires_at) > Date.now() + 295000);
-    assert.ok(Date.parse(link.expires_at) <= Date.now() + 301000);
+    assert.equal(link.session_ttl_seconds, 604800);
+    assert.ok(Date.parse(link.expires_at) > Date.now() + 604800000 - 5000);
+    assert.ok(Date.parse(link.expires_at) <= Date.now() + 604800000 + 1000);
     const ticket = new URLSearchParams(new URL(link.url).hash.slice(1)).get(
       "ticket",
     )!;
@@ -109,7 +109,7 @@ test("dashboard links open independent browser sessions without consumption or e
       "SELECT EXTRACT(EPOCH FROM expires_at-now()) AS seconds FROM dashboard_sessions WHERE kind='browser'",
       [],
     );
-    assert.ok(Number(duration!.seconds) > 86390);
+    assert.ok(Number(duration!.seconds) > 604790);
     await f.query(
       "UPDATE dashboard_sessions SET expires_at=now()-interval '1 second'",
       [],
@@ -261,6 +261,16 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
       ).status,
       403,
     );
+    const malformed = await call("/api/v1/dashboard/redeem", {
+      method: "POST",
+      body: { ticket: "truncated" },
+      origin,
+    });
+    assert.equal(malformed.status, 400);
+    assert.match(
+      (await malformed.json()).error.message,
+      /incomplete or malformed/,
+    );
     const redeemed = await call("/api/v1/dashboard/redeem", {
       method: "POST",
       body: { ticket },
@@ -273,7 +283,7 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
       "HttpOnly",
       "SameSite=None",
       "Partitioned",
-      "Max-Age=86400",
+      "Max-Age=604800",
       "Path=/",
     ])
       assert.ok(cookie.includes(flag));
@@ -707,15 +717,33 @@ test("bug detail checks project ownership and returns report content without pro
 });
 
 test("deployment permits dashboard framing and partitioned logout clears the browser cookie", async () => {
-  const config = await readFile(new URL("../netlify.toml", import.meta.url), "utf8");
+  const config = await readFile(
+    new URL("../netlify.toml", import.meta.url),
+    "utf8",
+  );
   const rules = config.split("[[headers]]").slice(1);
-  const embedding = rules.filter(rule => rule.includes('Content-Security-Policy = "frame-ancestors *"'));
+  const embedding = rules.filter((rule) =>
+    rule.includes('Content-Security-Policy = "frame-ancestors *"'),
+  );
   assert.equal(embedding.length, 2);
-  assert.ok(embedding.some(rule => rule.includes('for = "/dashboard"')));
-  assert.ok(embedding.some(rule => rule.includes('for = "/dashboard/"')));
-  assert.ok(rules.some(rule => rule.includes('for = "/*"') && rule.includes('X-Frame-Options = "DENY"')));
+  assert.ok(embedding.some((rule) => rule.includes('for = "/dashboard"')));
+  assert.ok(embedding.some((rule) => rule.includes('for = "/dashboard/"')));
+  assert.ok(
+    rules.some(
+      (rule) =>
+        rule.includes('for = "/*"') &&
+        rule.includes('X-Frame-Options = "DENY"'),
+    ),
+  );
   const { dashboardCookie } = await import("../src/api/dashboard-auth.ts");
   const cleared = dashboardCookie("", 0);
-  for (const attribute of ["Secure", "HttpOnly", "SameSite=None", "Partitioned", "Path=/", "Max-Age=0"])
+  for (const attribute of [
+    "Secure",
+    "HttpOnly",
+    "SameSite=None",
+    "Partitioned",
+    "Path=/",
+    "Max-Age=0",
+  ])
     assert.ok(cleared.includes(attribute));
 });
