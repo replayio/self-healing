@@ -7,7 +7,7 @@ import {
 } from "./dashboard-auth.ts";
 import { dashboardData } from "./dashboard-data.ts";
 import { pipelineData } from "./pipeline.ts";
-import { FixPrInput, VerificationInput } from "./contracts.ts";
+import { BugUpdateInput, FixPrInput, VerificationInput } from "./contracts.ts";
 import { qaClient } from "./qa.ts";
 import { getAccountService } from "./accounts.ts";
 import { getConnectionService } from "./connections.ts";
@@ -219,7 +219,15 @@ export function createHandler(
                   req,
                 )))
       )(request);
-      for (const id of match.slice(1)) Id.parse(id);
+      const pathNames = [...operation.path.matchAll(/\{([^}]+)\}/g)].map(
+        (m) => m[1]!,
+      );
+      const pathValues = Object.fromEntries(
+        pathNames.map((name, index) => [
+          name,
+          (operation.pathParameters?.[name] ?? Id).parse(match[index + 1]),
+        ]),
+      );
       const query = operation.query?.parse(
         Object.fromEntries(url.searchParams),
       ) as { cursor?: string; limit: number } | undefined;
@@ -264,29 +272,30 @@ export function createHandler(
         const input = (body ?? query ?? {}) as {
           page?: number;
           bug_id?: string;
-          reason?: string;
         };
         const result =
           operation.id === "pipelineBugs"
             ? await data.bugs(connection, input.page!)
             : operation.id === "pipelineBug"
               ? await data.bug(connection, input.bug_id!)
-              : operation.id === "pipelineWontfix"
-                ? await data.wontfix(connection, input.bug_id!, input.reason!)
-                : operation.id === "pipelineFixed"
-                  ? await data.fixed(connection, FixPrInput.parse(body))
-                  : operation.id === "pipelineAssociatePr"
-                    ? await data.associatePr(connection, FixPrInput.parse(body))
-                    : operation.id === "pipelineVerify"
-                      ? await data.verify(
-                          connection,
-                          VerificationInput.parse(body),
-                        )
-                      : await data.verifications(
-                          connection,
-                          input.bug_id!,
-                          input.page!,
-                        );
+              : operation.id === "pipelineUpdateBug"
+                ? await data.updateBug(
+                    connection,
+                    pathValues.bug_id,
+                    BugUpdateInput.parse(body),
+                  )
+                : operation.id === "pipelineAssociatePr"
+                  ? await data.associatePr(connection, FixPrInput.parse(body))
+                  : operation.id === "pipelineVerify"
+                    ? await data.verify(
+                        connection,
+                        VerificationInput.parse(body),
+                      )
+                    : await data.verifications(
+                        connection,
+                        input.bug_id!,
+                        input.page!,
+                      );
         return json(operation.response.parse(result), operation.status ?? 200);
       }
       if (operation.dashboard) {

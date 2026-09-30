@@ -22,18 +22,20 @@ Stay quiet when there is nothing actionable. Surface newly ready PRs, evidence-b
 
 Treat the report and proposed cause as claims to investigate. Compare the report with the source, intended product behavior, and recorded evidence. Inspect its recording with available Replay tools; reproduce or add a focused test where useful and permitted by the repository. Confirm both that there is a real defect and that changing this project is an appropriate fix.
 
-For a false positive, a duplicate already covered by other work, expected behavior, or a real issue that should not be fixed, record **WONTFIX** with a concrete explanation and supporting evidence. For a duplicate, name the canonical bug and covering PR and explain why they cover this reproduction. If the product decision is unclear, ask the user; do not invent a reason to dismiss it. Missing access, an unavailable recording, a QA failure, or failure to reproduce alone is not evidence for WONTFIX.
+Use `invalid` when evidence establishes a false positive or expected behavior. Use `wontfix` for a real issue intentionally left unfixed or a duplicate already covered by other work. Both require a concrete reason and supporting evidence. For a duplicate, name the canonical bug and covering PR and explain why they cover this reproduction. If the product decision is unclear, ask the user; do not invent a reason to dismiss it. Missing access, an unavailable recording, a QA failure, or failure to reproduce alone is not evidence for dismissal.
 
-`POST /api/v1/connection/bugs/wontfix`:
+Update the disposition through `PATCH /api/v1/connection/bugs/<bug_id>`:
 
 ```json
 {
-  "bug_id": "<bug id>",
+  "status": "wontfix",
   "reason": "<why this report should not be fixed, with relevant evidence or canonical bug/PR links>"
 }
 ```
 
-The response is the updated bug. Check `status: "wontfix"` and `resolution` (the saved reason). On an uncertain response, read the bug before retrying; submitting the same reason again is safe. Do not close a different bug or the canonical duplicate target. Leave unresolved evidence or product questions open with a recorded factory blocker.
+Use `status: "invalid"` with a reason for an invalid report, or `status: "open"` to reopen one. The supported statuses are `open`, `fixed`, `wontfix`, and `invalid`. Reasons are required for `wontfix` and `invalid`, and optional for `open` and `fixed`. WONTFIX reasons appear in `resolution`; other supplied reasons are appended to QA's `notes`, preserving existing investigation notes.
+
+The response is the updated bug. Check its status and saved explanation. On an uncertain response, read the bug before retrying; identical retries skip completed writes. Do not close a different bug or the canonical duplicate target. Leave unresolved evidence or product questions open with a recorded factory blocker. PR association is a separate operation; do not include a PR URL in a status update.
 
 ## Write a fix PR
 
@@ -86,18 +88,17 @@ Follow the target repository's policies and the user's instructions for PR readi
 After confirming that the associated fix PR **merged** and addresses this bug, persist the resolution (including for previously merged PRs whose bugs remain open):
 
 ```http
-POST /api/v1/connection/bugs/fixed
+PATCH /api/v1/connection/bugs/<bug_id>
 Authorization: Bearer <Self Healing account key>
 Content-Type: application/json
 
 {
-  "bug_id": "<bug id>",
-  "pr_url": "https://github.com/<owner>/<repo>/pull/<number>"
+  "status": "fixed",
+  "reason": "<merged PR reference and evidence that the fix addresses this bug>"
 }
 ```
 
-Confirm the response has `status: "fixed"` and the PR link. This records the factory's landed-fix disposition in QA and moves the bug from the dashboard's Open bugs section to Closed bugs. It does not assert a QA verification verdict. A PR closed without merging is not a fix: keep that bug open. The service has no GitHub credentials to independently check private PRs, so the factory must check merge state using its repository access. On an uncertain response, read the bug before retrying; an already-fixed bug does not repeat the QA status update. Continue tracking saved PRs even after their bugs leave the open list.
-
+Confirm the response has `status: "fixed"` and the saved reason in `notes`. Associate the PR separately through `/connection/bugs/fix-prs` if it is not already linked. This records the factory's landed-fix disposition in QA and moves the bug from the dashboard's Open bugs section to Closed bugs. It does not assert a QA verification verdict. A PR closed without merging is not a fix: keep that bug open. The service has no GitHub credentials to independently check private PRs, so the factory must check merge state using its repository access. On an uncertain response, read the bug before retrying; an already-fixed bug does not repeat the QA status update. Continue tracking saved PRs even after their bugs leave the open list.
 
 ## Other operations and failures
 

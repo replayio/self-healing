@@ -16,7 +16,9 @@ export function getOpenApiSpec() {
       name: match[1],
       in: "path",
       required: true,
-      schema: { type: "string", format: "uuid" },
+      schema: operation.pathParameters?.[match[1]!]
+        ? schema(operation.pathParameters[match[1]!]!)
+        : { type: "string", format: "uuid" },
     }));
     if (operation.query) {
       const query = schema(operation.query) as {
