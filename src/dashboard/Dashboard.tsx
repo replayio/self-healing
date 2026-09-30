@@ -867,18 +867,12 @@ function Snapshot({ id, timestamp }: { id: string; timestamp: number }) {
     <>
       {result.data.images.length ? (
         result.data.images.map((image, i) => (
-          <a
+          <img
             key={i}
-            href={`data:${image.mime_type};base64,${image.data}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <img
-              className="dh-session-screenshot"
-              src={`data:${image.mime_type};base64,${image.data}`}
-              alt={`Session at ${(timestamp / 1000).toFixed(1)} seconds`}
-            />
-          </a>
+            className="dh-session-screenshot"
+            src={`data:${image.mime_type};base64,${image.data}`}
+            alt={`Session at ${(timestamp / 1000).toFixed(1)} seconds`}
+          />
         ))
       ) : (
         <p className="dh-note">No screenshot available at this point.</p>
