@@ -4,7 +4,8 @@ import { z } from "zod";
 import { HttpError } from "./errors.ts";
 import type { Query } from "./store.ts";
 
-export const DASHBOARD_COOKIE = "__Host-sh-dashboard";
+// New name avoids collisions with legacy unpartitioned cookies.
+export const DASHBOARD_COOKIE = "__Host-sh-dashboard-v2";
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -20,7 +21,7 @@ function cookieToken(request: Request) {
   );
 }
 export function dashboardCookie(value: string, age = 86400) {
-  return `${DASHBOARD_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${age}`;
+  return `${DASHBOARD_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=None; Partitioned; Max-Age=${age}`;
 }
 export function requireDashboardOrigin(request: Request) {
   if (request.headers.get("origin") !== new URL(request.url).origin)

@@ -51,3 +51,15 @@
   [headers.values]
     Referrer-Policy = "no-referrer"
     Cache-Control = "no-store"
+
+# CSP frame-ancestors takes precedence over X-Frame-Options in modern browsers.
+# Only dashboard documents opt into framing; other paths retain DENY.
+[[headers]]
+  for = "/dashboard"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors *"
+
+[[headers]]
+  for = "/dashboard/"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors *"
