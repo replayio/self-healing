@@ -14,6 +14,7 @@ import {
 } from "../api/contracts";
 import "./dashboard.css";
 import { screenshotQueue } from "./screenshot-queue";
+import { dashboardTicket } from "./launch-link";
 
 type Overview = z.infer<typeof DashboardOverview>;
 type Bug = z.infer<typeof DashboardBug>;
@@ -117,9 +118,7 @@ async function api(path: string, signal?: AbortSignal, body?: unknown) {
 let initialization: Promise<void> | undefined;
 function initialize() {
   if (!initialization) {
-    const ticket = new URLSearchParams(window.location.hash.slice(1)).get(
-      "ticket",
-    );
+    const ticket = dashboardTicket(window.location.hash);
     initialization = ticket
       ? api("redeem", undefined, { ticket }).then(() => {
           // Keep the capability available for a retry until the cookie exchange succeeds.
