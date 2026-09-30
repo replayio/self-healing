@@ -269,7 +269,7 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
             ];
             const colors = ["#93c5fd", "#f59e0b", "#f02d5e", "#7c3aed"];
             let used = 0;
-            const label = `${date(d.day)}: ${d.sessions} sessions, ${pct(d.bug_sessions, d.sessions)} with bugs, ${pct(d.serious_sessions, d.sessions)} with serious issues, ${d.reviewed_sessions} reviewed.`;
+            const label = `${date(d.day)}: ${d.sessions} sessions, ${pct(d.bug_sessions, d.sessions)} with bugs, ${pct(d.serious_sessions, d.sessions)} with friction, ${d.reviewed_sessions} reviewed.`;
             return (
               <g
                 key={d.day}
@@ -322,7 +322,7 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
             <span>{count(point.sessions)} sessions</span>
             <span>{pct(point.bug_sessions, point.sessions)} with bugs</span>
             <span>
-              {pct(point.serious_sessions, point.sessions)} with serious issues
+              {pct(point.serious_sessions, point.sessions)} with friction
             </span>
             <span>{count(point.reviewed_sessions)} reviewed</span>
           </>
@@ -331,7 +331,7 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
         )}
       </div>
       <p className="dh-note">
-        Serious issues blocked user progress. Percentages include all sessions;
+        Friction blocked user progress. Percentages include all sessions;
         unreviewed sessions may still contain issues.
       </p>
       {!days.some((d) => d.sessions) && (
@@ -396,19 +396,17 @@ function OverviewTab() {
           </strong>
           <dl className="dh-card-breakdown">
             <div>
-              <dt>Total sessions</dt>
+              <dt>Sessions</dt>
               <dd>{count(d.sessions_24h)}</dd>
             </div>
             <div>
-              <dt>With serious errors</dt>
+              <dt>Friction</dt>
               <dd>{count(d.serious_sessions_24h)}</dd>
             </div>
           </dl>
-          <p className="dh-card-note">
-            {d.sessions_24h === 0
-              ? "No sessions in the last 24 hours."
-              : "Sessions without detected serious errors. Includes unreviewed sessions."}
-          </p>
+          {d.sessions_24h === 0 && (
+            <p className="dh-card-note">No sessions in the last 24 hours.</p>
+          )}
         </article>
       </div>
       <SessionChart days={d.days} />
