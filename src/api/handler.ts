@@ -177,9 +177,26 @@ export function createHandler(
         (dependencies.dashboardAuth ?? getDashboardAuth)();
       if (operation.id === "redeemDashboardSession") {
         requireDashboardOrigin(request);
-        const input = operation.body!.parse(await readBody(request)) as {
-          ticket: string;
-        };
+        const raw = await readBody(request);
+        const parsed = operation.body!.safeParse(raw);
+        if (!parsed.success) {
+          const ticket = z.object({ ticket: z.unknown() }).safeParse(raw);
+          const value = ticket.success ? ticket.data.ticket : undefined;
+          const detail =
+            typeof value !== "string"
+              ? "No dashboard access code was received."
+              : value.length !== 64
+                ? `The dashboard received an access code with ${value.length} characters; it must contain exactly 64.`
+                : !/^[a-f0-9]{64}$/.test(value)
+                  ? "The dashboard access code contains characters it cannot accept. It must contain only lowercase letters a–f and digits 0–9."
+                  : "The dashboard received an unexpected link-opening request.";
+          throw new HttpError(
+            400,
+            "invalid_dashboard_link",
+            `${detail} If this dashboard is embedded in your factory, have the factory use the exact URL returned by Self Healing without shortening or rebuilding it. You can also try opening that same URL directly in your browser.`,
+          );
+        }
+        const input = parsed.data as { ticket: string };
         headers["Set-Cookie"] = dashboardCookie(
           await dashboardSession().redeem(input.ticket),
         );

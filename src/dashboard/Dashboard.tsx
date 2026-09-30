@@ -73,7 +73,22 @@ function Icon({ name }: { name: keyof typeof iconPaths }) {
     </svg>
   );
 }
-const Failure = z.object({ error: z.object({ message: z.string() }) });
+const Failure = z.object({
+  error: z.object({
+    message: z.string(),
+    code: z.string().optional(),
+    request_id: z.string().optional(),
+  }),
+});
+class DashboardError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly requestId?: string,
+  ) {
+    super(message);
+  }
+}
 async function api(path: string, signal?: AbortSignal, body?: unknown) {
   const response = await fetch(`/api/v1/dashboard/${path}`, {
     credentials: "same-origin",
@@ -87,12 +102,15 @@ async function api(path: string, signal?: AbortSignal, body?: unknown) {
           body: JSON.stringify(body),
         }),
   });
-  const value: unknown = await response.json();
-  if (!response.ok)
-    throw new Error(
-      Failure.safeParse(value).data?.error.message ??
-        "Could not load dashboard data. Try again.",
+  const value: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = Failure.safeParse(value).data?.error;
+    throw new DashboardError(
+      error?.message ?? "Self Healing did not respond correctly. Try again.",
+      error?.code,
+      error?.request_id,
     );
+  }
   return value;
 }
 // One exchange per page load, including React StrictMode's repeated mount effects.
@@ -1140,6 +1158,7 @@ export default function Dashboard() {
   );
   const [ready, setReady] = useState(false),
     [error, setError] = useState("");
+  const [openingError, setOpeningError] = useState<DashboardError>();
   useEffect(() => {
     // A factory may replace just the fragment in an already-open iframe.
     const newLink = () => {
@@ -1149,7 +1168,16 @@ export default function Dashboard() {
     window.addEventListener("hashchange", newLink);
     initialize()
       .then(() => setReady(true))
-      .catch((e) => setError(e.message));
+      .catch((e: unknown) => {
+        const failure =
+          e instanceof DashboardError
+            ? e
+            : new DashboardError(
+                "Could not connect to Self Healing. Check your connection and try again.",
+              );
+        setOpeningError(failure);
+        setError(failure.message);
+      });
     return () => window.removeEventListener("hashchange", newLink);
   }, []);
   useEffect(() => {
@@ -1212,7 +1240,22 @@ export default function Dashboard() {
       <main className="dh-main">
         {error ? (
           <div className="dh-state" role="alert">
+            <h1>Couldn’t open the dashboard</h1>
             <p>{error}</p>
+            {openingError?.requestId && (
+              <details className="dh-error-details">
+                <summary>Details for your factory</summary>
+                <p>Error: {openingError.code ?? "unknown"}</p>
+                <p>Request ID: {openingError.requestId}</p>
+                <p>
+                  Opened{" "}
+                  {window.self === window.top
+                    ? "directly in a browser"
+                    : "inside an iframe"}
+                  .
+                </p>
+              </details>
+            )}
             {!ready && window.location.hash.includes("ticket=") && (
               <button onClick={() => window.location.reload()}>
                 Retry opening dashboard
