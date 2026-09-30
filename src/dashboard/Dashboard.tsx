@@ -13,6 +13,7 @@ import {
   type DashboardBug,
 } from "../api/contracts";
 import "./dashboard.css";
+import { screenshotQueue } from "./screenshot-queue";
 
 type Overview = z.infer<typeof DashboardOverview>;
 type Bug = z.infer<typeof DashboardBug>;
@@ -118,7 +119,9 @@ function useData<T>(path: string, schema: z.ZodType<T>) {
   useEffect(() => {
     const controller = new AbortController();
     setState({ path });
-    api(path, controller.signal)
+    (path.startsWith("session-snapshot?")
+      ? screenshotQueue(() => api(path, controller.signal), controller.signal)
+      : api(path, controller.signal))
       .then((value) => schema.parse(value))
       .then((data) => {
         if (!controller.signal.aborted) setState({ path, data });
@@ -880,12 +883,6 @@ function Snapshot({ id, timestamp }: { id: string; timestamp: number }) {
       ) : (
         <p className="dh-note">No screenshot available at this point.</p>
       )}
-      {result.data.tree && (
-        <details>
-          <summary>Component tree</summary>
-          <pre className="dh-session-tree">{result.data.tree}</pre>
-        </details>
-      )}
     </>
   );
 }
@@ -961,16 +958,9 @@ function SessionDetail({ id, back }: { id: string; back: () => void }) {
           </ol>
           {!result.data.interactions.length && (
             <p className="dh-state">
-              No interaction rows available yet. See the Subtext timeline below
-              or refresh after processing.
+              No interaction rows available yet. Refresh after processing.
             </p>
           )}
-          <details>
-            <summary>Full Subtext timeline</summary>
-            <pre className="dh-session-tree">
-              {result.data.timeline || "No timeline available yet."}
-            </pre>
-          </details>
         </section>
       )}
     </>

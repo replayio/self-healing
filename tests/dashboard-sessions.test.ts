@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { dashboardSessions } from "../src/api/dashboard-sessions.ts";
 import { dashboardData } from "../src/api/dashboard-data.ts";
+import { QARequestError } from "../src/api/qa.ts";
 import { HttpError } from "../src/api/errors.ts";
 import type { Connection } from "../src/api/connections.ts";
 const connection = { qa_project_id: "project-one" } as Connection;
@@ -12,7 +13,7 @@ const session = {
   first_received_at: "2026-09-30T00:00:00Z",
   last_received_at: "2026-09-30T01:00:00Z",
 };
-function fixture(failure?: string) {
+function fixture(failure?: string, sightmap: Record<string, unknown> = {}) {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const request: typeof fetch = async (url, init) => {
     assert.equal(url, "https://api.fullstory.com/mcp/subtext");
@@ -30,7 +31,10 @@ function fixture(failure?: string) {
     if (body.method === "tools/list")
       result = {
         tools: [
-          { name: "review-open", inputSchema: { properties: { url: {} } } },
+          {
+            name: "review-open",
+            inputSchema: { properties: { url: {}, sightmap: {}, memory: {} } },
+          },
           {
             name: "review-zoom",
             inputSchema: { properties: { client_id: {}, resolution: {} } },
@@ -58,7 +62,7 @@ function fixture(failure?: string) {
       const { name, arguments: args } = body.params;
       calls.push(body.params);
       if (name === "review-open") {
-        assert.deepEqual(args, { url: session.session_url });
+        assert.deepEqual(args, { url: session.session_url, ...sightmap });
         result = {
           content: [
             {
@@ -79,13 +83,15 @@ function fixture(failure?: string) {
             content: [
               {
                 type: "text",
-                text: '# tab 1 · https://example.com (opened)\n0ms page-load\n100ms click button "Save"\n100ms scroll 100\n200ms network GET /items',
+                text: '# tab 1 · https://example.com (opened)\n0ms page-load\n100ms click button "Save^changes"\n100ms scroll 100\n200ms network GET /items',
               },
             ],
           };
         }
         if (name === "review-snapshot") {
           assert.equal(args.timestamp, 100);
+          assert.deepEqual(args.include, ["image"]);
+          assert.equal(args.lens, undefined);
           result = {
             content: [
               { type: "text", text: "[button] Save" },
@@ -153,7 +159,10 @@ test("session ownership is exact, project-scoped and checked before any Subtext 
 test("Subtext interactions and screenshots use negotiated tools, preserve timeline and close reviews", async () => {
   const f = fixture();
   const service = dashboardSessions(
-    async () => ({ sessions: [session], page: 0, has_more: false }),
+    async (path) => {
+      if (path.endsWith("/sightmap")) throw new QARequestError(404);
+      return { sessions: [session], page: 0, has_more: false };
+    },
     "secret-key",
     f.request,
   );
@@ -163,11 +172,12 @@ test("Subtext interactions and screenshots use negotiated tools, preserve timeli
     [0, 100, 100],
   );
   assert.ok(result.timeline.includes("200ms network"));
+  assert.equal(result.interactions[1]!.text, 'click button "Save changes"');
   assert.ok(!JSON.stringify(result).includes("secret-key"));
   assert.equal(f.calls.at(-1)!.name, "review-close");
   const shot = await service.snapshot(connection, session.session_id, 100);
   assert.deepEqual(shot, {
-    tree: "[button] Save",
+    tree: "",
     images: [{ data: "aW1hZ2U=", mime_type: "image/png" }],
   });
   assert.equal(f.calls.at(-1)!.name, "review-close");
@@ -175,7 +185,10 @@ test("Subtext interactions and screenshots use negotiated tools, preserve timeli
 test("Subtext failures are explicit and sanitized, and still close the review", async () => {
   const f = fixture("review-zoom");
   const service = dashboardSessions(
-    async () => ({ sessions: [session], page: 0, has_more: false }),
+    async (path) => {
+      if (path.endsWith("/sightmap")) throw new QARequestError(404);
+      return { sessions: [session], page: 0, has_more: false };
+    },
     "secret-key",
     f.request,
   );
@@ -196,4 +209,55 @@ test("bug sorting is delegated to QA before pagination", async () => {
     return { items: [], total: 120 };
   }).bugs(connection, 2);
   assert.equal(result.page, 2);
+});
+
+test("the connected QA sightmap reaches every review-open, including screenshots", async () => {
+  const context = {
+    sightmap: [{ name: "Save", selectors: ["button"] }],
+    memory: [],
+  };
+  const f = fixture(undefined, context);
+  const service = dashboardSessions(
+    async (path) => {
+      if (path === "/api/projects/project-one/sightmap")
+        return {
+          doc: {
+            views: [],
+            components: [{ name: "Save", selector: "button" }],
+          },
+        };
+      assert.ok(path.includes("project_id=project-one"));
+      return { sessions: [session], page: 0, has_more: false };
+    },
+    "secret-key",
+    f.request,
+  );
+  await service.session(connection, session.session_id);
+  await service.snapshot(connection, session.session_id, 100);
+  assert.equal(f.calls.filter((call) => call.name === "review-open").length, 2);
+});
+
+test("snapshot HTTP failures identify the operation without claiming the session is processing", async () => {
+  const f = fixture();
+  const service = dashboardSessions(
+    async (path) => {
+      if (path.endsWith("/sightmap")) throw new QARequestError(404);
+      return { sessions: [session], page: 0, has_more: false };
+    },
+    "secret-key",
+    async (url, init) => {
+      const body = JSON.parse(init!.body as string);
+      if (body.params?.name === "review-snapshot")
+        return new Response("secret diagnostic", { status: 429 });
+      return f.request(url, init);
+    },
+  );
+  await assert.rejects(
+    service.snapshot(connection, session.session_id, 100),
+    (error: unknown) =>
+      error instanceof HttpError &&
+      error.message ===
+        "Subtext review-snapshot failed. Too many requests; retry shortly.",
+  );
+  assert.equal(f.calls.at(-1)!.name, "review-close");
 });
