@@ -358,7 +358,7 @@ export function dashboardData(
     async bugs(c: Connection, page: number) {
       const result = await read(
         BugPage,
-        `${bugsPath(c)}&status=open&page=${page}`,
+        `${bugsPath(c)}&status=open&severitySort=desc&page=${page}`,
       );
       return DashboardBugs.parse({
         items: result.items.map((b) => bug(b)),

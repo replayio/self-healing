@@ -572,6 +572,35 @@ export const DashboardBugs = z.object({
   page: Count,
   has_more: z.boolean(),
 });
+export const DashboardSession = z.object({
+  session_id: z.string(),
+  session_url: z.string().url(),
+  user_email: z.string().nullable(),
+  first_received_at: z.string(),
+  last_received_at: z.string(),
+});
+export const DashboardSessions = z.object({
+  sessions: z.array(DashboardSession),
+  page: z.number(),
+  has_more: z.boolean(),
+});
+export const DashboardSessionDetail = z.object({
+  session: DashboardSession,
+  timeline: z.string(),
+  interactions: z.array(
+    z.object({ timestamp: z.number().nonnegative(), text: z.string() }),
+  ),
+});
+export const DashboardSessionSnapshot = z.object({
+  tree: z.string(),
+  images: z.array(
+    z.object({
+      data: z.string(),
+      mime_type: z.enum(["image/png", "image/jpeg", "image/webp"]),
+    }),
+  ),
+});
+const DashboardSessionId = z.string().min(1).max(256);
 export const DashboardReports = z.object({
   older: DashboardDay.nullable(),
   newer: DashboardDay.nullable(),
@@ -749,6 +778,47 @@ export const operations: Operation[] = [
       })
       .strict(),
     response: DashboardBugDetail,
+  },
+  {
+    id: "dashboardSessions",
+    method: "GET",
+    path: "/api/v1/dashboard/sessions",
+    dashboard: true,
+    implemented: true,
+    summary: "List captured sessions by first-received UTC day",
+    query: z
+      .object({
+        day: DashboardDay,
+        page: z.coerce.number().int().min(0).max(100000).default(0),
+      })
+      .strict(),
+    response: DashboardSessions,
+  },
+  {
+    id: "dashboardSession",
+    method: "GET",
+    path: "/api/v1/dashboard/session",
+    dashboard: true,
+    implemented: true,
+    summary: "Read a captured session's Subtext interaction timeline",
+    query: z.object({ session_id: DashboardSessionId }).strict(),
+    response: DashboardSessionDetail,
+  },
+  {
+    id: "dashboardSessionSnapshot",
+    method: "GET",
+    path: "/api/v1/dashboard/session-snapshot",
+    dashboard: true,
+    implemented: true,
+    summary:
+      "Read Subtext screenshots and component tree at a session timestamp",
+    query: z
+      .object({
+        session_id: DashboardSessionId,
+        timestamp: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict(),
+    response: DashboardSessionSnapshot,
   },
   {
     id: "dashboardReports",
