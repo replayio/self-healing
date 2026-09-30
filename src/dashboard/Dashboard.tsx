@@ -19,7 +19,7 @@ import { dashboardTicket } from "./launch-link";
 type Overview = z.infer<typeof DashboardOverview>;
 type Bug = z.infer<typeof DashboardBug>;
 type Reports = z.infer<typeof DashboardReports>;
-const tabs = ["overview", "bugs", "reports", "sessions"] as const;
+const tabs = ["overview", "reports", "bugs", "sessions"] as const;
 type Tab = (typeof tabs)[number];
 const iconPaths = {
   overview: (
@@ -531,7 +531,7 @@ export function BugReport({
     <>
       <div className="dh-title-row">
         <div>
-          <a href="/dashboard?tab=bugs">← Open bugs</a>
+          <a href="/dashboard?tab=bugs">← Bugs</a>
           <h1>{bug.title}</h1>
           <p>
             {bugKind(bug.kind)} · {bug.severity} · {bug.status} · Detected{" "}
@@ -609,7 +609,7 @@ function BugDetailPage({ id }: { id: string }) {
     <BugReport bug={result.data} />
   ) : (
     <>
-      <a href="/dashboard?tab=bugs">← Open bugs</a>
+      <a href="/dashboard?tab=bugs">← Bugs</a>
       <LoadState {...result}>Loading bug report…</LoadState>
     </>
   );
@@ -670,13 +670,32 @@ export function BugTable({ bugs }: { bugs: Bug[] }) {
   );
 }
 function BugsTab() {
+  const [status, setStatus] = useState<"open" | "closed">("open");
+  return (
+    <>
+      <div className="dh-tabs" aria-label="Bug status">
+        {(["open", "closed"] as const).map((value) => (
+          <button
+            key={value}
+            aria-pressed={status === value}
+            onClick={() => setStatus(value)}
+          >
+            {value === "open" ? "Open bugs" : "Closed bugs"}
+          </button>
+        ))}
+      </div>
+      <BugList key={status} status={status} />
+    </>
+  );
+}
+function BugList({ status }: { status: "open" | "closed" }) {
   const [page, setPage] = useState(1);
-  const result = useData(`bugs?page=${page}`, DashboardBugs);
+  const result = useData(`bugs?status=${status}&page=${page}`, DashboardBugs);
   return (
     <>
       <div className="dh-title-row">
         <div>
-          <h1>Open bugs</h1>
+          <h1>{status === "open" ? "Open bugs" : "Closed bugs"}</h1>
           <p>Read bug reports and follow linked fix pull requests.</p>
         </div>
         <button
@@ -690,12 +709,14 @@ function BugsTab() {
       {result.data ? (
         <section className="dh-panel">
           <div className="dh-panel-heading">
-            <h2>{count(result.data.total)} open bugs</h2>
+            <h2>
+              {count(result.data.total)} {status} bugs
+            </h2>
           </div>
           {result.data.items.length ? (
             <BugTable bugs={result.data.items} />
           ) : (
-            <p className="dh-state">No open bugs.</p>
+            <p className="dh-state">No {status} bugs.</p>
           )}
           <div className="dh-pagination">
             <button

@@ -363,7 +363,37 @@ export function dashboardData(
           : null,
       });
     },
-    async bugs(c: Connection, page: number) {
+    async bugs(
+      c: Connection,
+      page: number,
+      status: "open" | "closed" = "open",
+    ) {
+      if (status === "closed") {
+        // QA has individual status filters, but no combined resolved filter.
+        // Scan its ordered list before slicing so filtering cannot lose rows or pages.
+        const closed = [] as z.infer<typeof Bug>[];
+        for (let sourcePage = 1; ; sourcePage++) {
+          const result = await read(
+            BugPage,
+            `${bugsPath(c)}&status=all&severitySort=desc&page=${sourcePage}`,
+          );
+          closed.push(
+            ...result.items.filter((b) =>
+              ["fixed", "wontfix", "invalid", "pr-closed"].includes(b.status),
+            ),
+          );
+          if (sourcePage * 100 >= result.total) break;
+        }
+        return DashboardBugs.parse({
+          items: await augment(
+            c,
+            closed.slice((page - 1) * 100, page * 100).map(bug),
+          ),
+          total: closed.length,
+          page,
+          has_more: page * 100 < closed.length,
+        });
+      }
       const result = await read(
         BugPage,
         `${bugsPath(c)}&status=open&severitySort=desc&page=${page}`,

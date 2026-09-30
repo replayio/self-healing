@@ -43,6 +43,7 @@ function fixture() {
     discovered_at: "2026-09-29T10:00:00Z",
     test_run_id: "run-original" as string | null,
     wontfix_reason: null as string | null,
+    notes: "Existing investigation" as string | null,
     replay_recording_id: "recording-1",
     callback_url: "private",
   };
@@ -60,6 +61,7 @@ function fixture() {
     method: string;
     body: Record<string, unknown> | undefined;
   }[] = [];
+  let failStatusOnce = false;
   let loseCreate = false,
     fail = 0;
   const qa = qaClient(
@@ -78,7 +80,25 @@ function fixture() {
       });
       if (fail) return Response.json({ error: "private" }, { status: fail });
       if (u.pathname === "/api/v1/bugs/bug-1") {
-        if (init?.method === "PATCH") bug = { ...bug, ...body };
+        if (init?.method === "PATCH" && failStatusOnce) {
+          failStatusOnce = false;
+          return Response.json(
+            { error: "Temporary provider failure" },
+            { status: 503 },
+          );
+        }
+        if (init?.method === "PATCH")
+          bug = {
+            ...bug,
+            ...body,
+            wontfix_reason:
+              body.status === "wontfix" ? body.wontfix_reason : null,
+          };
+        return Response.json(bug);
+      }
+      if (u.pathname === "/api/bugs/bug-1" && init?.method === "PATCH") {
+        assert.equal(body.action, "update-notes");
+        bug = { ...bug, notes: body.notes };
         return Response.json(bug);
       }
       if (u.pathname === "/api/test-runs/run-original")
@@ -146,6 +166,9 @@ function fixture() {
     bug,
     source,
     journey,
+    failStatusOnce: () => {
+      failStatusOnce = true;
+    },
     loseCreate: () => {
       loseCreate = true;
     },
@@ -166,11 +189,10 @@ test("pipeline reads scoped reports and persists WONTFIX through QA PATCH with a
     "https://app.replay.io/recording/recording-1",
   ]);
   assert.ok(!JSON.stringify(b).includes("private"));
-  const result = await f.data.wontfix(
-    connection,
-    "bug-1",
-    "Expected behavior: the documented limit is enforced.",
-  );
+  const result = await f.data.updateBug(connection, "bug-1", {
+    status: "wontfix",
+    reason: "Expected behavior: the documented limit is enforced.",
+  });
   assert.equal(result.status, "wontfix");
   assert.equal(
     result.resolution,
@@ -181,6 +203,65 @@ test("pipeline reads scoped reports and persists WONTFIX through QA PATCH with a
     wontfix_reason: result.resolution,
   });
   assert.equal(f.calls.at(-1)?.method, "GET");
+});
+
+test("one disposition API supports fixes, invalid reports, WONTFIX and reopening with retry-safe reasons", async () => {
+  const f = fixture();
+  for (const status of ["fixed", "invalid", "wontfix", "open"] as const) {
+    const reason = `Evidence for ${status}`;
+    const result = await f.data.updateBug(connection, "bug-1", {
+      status,
+      reason,
+    });
+    assert.equal(result.status, status);
+    if (status === "wontfix") assert.equal(result.resolution, reason);
+    else {
+      assert.ok(result.notes?.startsWith("Existing investigation"));
+      assert.ok(
+        result.notes?.endsWith(
+          `Self Healing disposition (${status}): ${reason}`,
+        ),
+      );
+      assert.equal(result.resolution, null);
+    }
+    const patches = f.calls.filter((c) => c.method === "PATCH").length;
+    await f.data.updateBug(connection, "bug-1", { status, reason });
+    assert.equal(f.calls.filter((c) => c.method === "PATCH").length, patches);
+    assert.equal(f.calls.at(-1)?.method, "GET");
+  }
+  // Status updates never create PR associations.
+  assert.equal(f.links.size, 0);
+  const other = fixture();
+  other.bug.project_id = "qa-other";
+  await assert.rejects(
+    other.data.updateBug(connection, "bug-1", { status: "fixed" }),
+    (e: HttpError) => e.status === 404,
+  );
+  assert.ok(!other.calls.some((c) => c.method === "PATCH"));
+});
+
+test("retry after a partial disposition update preserves notes without duplicating the reason", async () => {
+  const f = fixture();
+  f.failStatusOnce();
+  const update = {
+    status: "invalid" as const,
+    reason: "Evidence establishes intended behavior.",
+  };
+  await assert.rejects(
+    f.data.updateBug(connection, "bug-1", update),
+    (e: HttpError) => e.status === 503,
+  );
+  const partial = await f.data.bug(connection, "bug-1");
+  assert.equal(partial.status, "open");
+  assert.ok(partial.notes?.includes(update.reason));
+  const result = await f.data.updateBug(connection, "bug-1", update);
+  assert.equal(result.status, "invalid");
+  assert.equal(result.notes, partial.notes);
+  assert.equal(
+    f.calls.filter((c) => c.body?.action === "update-notes").length,
+    1,
+  );
+  assert.equal(f.links.size, 0);
 });
 
 test("verification reruns the original journey version on the preview and retains pending/failure outcomes", async () => {
@@ -270,7 +351,10 @@ test("foreign bugs, source runs, journeys and results never pass account scope",
   const f = fixture();
   f.bug.project_id = "qa-other";
   await assert.rejects(
-    f.data.wontfix(connection, "bug-1", "reason"),
+    f.data.updateBug(connection, "bug-1", {
+      status: "wontfix",
+      reason: "reason",
+    }),
     (e: HttpError) => e.status === 404,
   );
   assert.ok(!f.calls.some((c) => c.method === "PATCH"));
@@ -348,10 +432,10 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
     },
     pipelineData: () => f.data,
   });
-  const call = (path: string, body?: unknown, key = true) =>
+  const call = (path: string, body?: unknown, key = true, method?: string) =>
     handler(
       new Request("https://healing.example/api/v1/connection/" + path, {
-        method: body === undefined ? "GET" : "POST",
+        method: method ?? (body === undefined ? "GET" : "POST"),
         headers: {
           "Content-Type": "application/json",
           Cookie: "self_healing_dashboard=browser",
@@ -362,10 +446,25 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
     );
   assert.equal((await call("bug?bug_id=bug-1", undefined, false)).status, 401);
   for (const body of [
-    { bug_id: "bug-1", reason: " " },
-    { bug_id: "bug-1", reason: "reason", account_id: account },
+    { status: "wontfix", reason: " " },
+    { status: "invalid" },
+    { status: "wontfix" },
+    { status: "verified" },
+    { status: "reopened" },
+    { status: "pr-closed" },
+    { status: "judge-rejected" },
+    { status: "fixed", pr_url: input.pr_url },
+    { status: "open", account_id: account },
   ])
-    assert.equal((await call("bugs/wontfix", body)).status, 400);
+    assert.equal((await call("bugs/bug-1", body, true, "PATCH")).status, 400);
+  assert.equal(
+    (await call("bugs/bug-1", { status: "fixed" }, false, "PATCH")).status,
+    401,
+  );
+  assert.equal(
+    (await call("bugs/bad%20id", { status: "fixed" }, true, "PATCH")).status,
+    400,
+  );
   for (const body of [
     { ...input, head_sha: "short" },
     { ...input, preview_url: "http://preview.example" },
@@ -399,14 +498,20 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
   const result = await call("bug-verifications?bug_id=bug-1&page=1");
   assert.equal(result.status, 200);
   assert.equal((await result.json()).items.length, 1);
+  for (const status of ["fixed", "wontfix", "invalid", "open"]) {
+    const response = await call(
+      "bugs/bug-1",
+      { status, reason: "Recorded evidence" },
+      true,
+      "PATCH",
+    );
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).status, status);
+  }
+  assert.equal((await call("bugs/fixed", association)).status, 405);
   assert.equal(
-    (
-      await call("bugs/wontfix", {
-        bug_id: "bug-1",
-        reason: "Documented intended behavior",
-      })
-    ).status,
-    200,
+    (await call("bugs/wontfix", { bug_id: "bug-1", reason: "reason" })).status,
+    405,
   );
   const spec = getOpenApiSpec();
   const op = spec.paths["/api/v1/connection/bug-verifications"]!.post as {
@@ -419,6 +524,21 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
     .post as typeof op;
   assert.deepEqual(associationOp.security, [{ bearerAuth: [] }]);
   assert.equal(associationOp["x-implementation-status"], "implemented");
+  const updateOp = spec.paths["/api/v1/connection/bugs/{bug_id}"]!.patch as {
+    security: unknown;
+    parameters: {
+      name: string;
+      required: boolean;
+      schema: { pattern?: string; format?: string };
+    }[];
+  };
+  assert.deepEqual(updateOp.security, [{ bearerAuth: [] }]);
+  assert.equal(updateOp.parameters[0]?.name, "bug_id");
+  assert.equal(updateOp.parameters[0]?.required, true);
+  assert.ok(updateOp.parameters[0]?.schema.pattern);
+  assert.equal(updateOp.parameters[0]?.schema.format, undefined);
+  assert.equal(spec.paths["/api/v1/connection/bugs/fixed"], undefined);
+  assert.equal(spec.paths["/api/v1/connection/bugs/wontfix"], undefined);
 });
 
 test("OpenAPI identifies required bug IDs and the skill's operations are implemented", () => {

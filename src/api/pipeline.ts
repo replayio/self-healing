@@ -2,6 +2,7 @@ import { getFixPrStore } from "./fix-prs.ts";
 import { z } from "zod";
 import {
   BugVerification,
+  BugUpdateInput,
   FixPrInput,
   BugVerifications,
   PipelineBug,
@@ -196,20 +197,56 @@ export function pipelineData(
       await fixPrs().associate(c, input);
       return bug(c, input.bug_id);
     },
-    async wontfix(c: Connection, id: string, reason: string) {
-      await rawBug(c, id);
-      await read(
-        Row,
-        `/api/v1/bugs/${encodeURIComponent(id)}`,
-        { status: "wontfix", wontfix_reason: reason },
-        "PATCH",
-      ).then((row) => owned(row, c));
+    async updateBug(
+      c: Connection,
+      id: string,
+      input: z.infer<typeof BugUpdateInput>,
+    ) {
+      const current = await bug(c, id);
+      const note =
+        input.reason && input.status !== "wontfix"
+          ? `Self Healing disposition (${input.status}): ${input.reason}`
+          : undefined;
+      const notes =
+        note && !current.notes?.endsWith(note)
+          ? [current.notes, note].filter(Boolean).join("\n\n")
+          : current.notes;
+      async function patch(path: string, body: unknown) {
+        const row = owned(await read(Row, path, body, "PATCH"), c);
+        if (row.id !== id)
+          throw new HttpError(
+            503,
+            "qa_contract_changed",
+            "QA returned a different bug.",
+          );
+      }
+      // Save the explanation first. After an uncertain write, readback makes retries
+      // skip completed work without repeating QA's status-change side effects.
+      if (notes !== current.notes)
+        await patch(`/api/bugs/${encodeURIComponent(id)}`, {
+          action: "update-notes",
+          notes,
+        });
+      if (
+        current.status !== input.status ||
+        (input.status === "wontfix" && current.resolution !== input.reason)
+      )
+        await patch(`/api/v1/bugs/${encodeURIComponent(id)}`, {
+          status: input.status,
+          ...(input.status === "wontfix"
+            ? { wontfix_reason: input.reason }
+            : {}),
+        });
       const result = await bug(c, id);
-      if (result.status !== "wontfix" || result.resolution !== reason)
+      if (
+        result.status !== input.status ||
+        (input.status === "wontfix" && result.resolution !== input.reason) ||
+        (note && result.notes !== notes)
+      )
         throw new HttpError(
           409,
           "disposition_changed",
-          "Read the bug again: its disposition did not match the requested WONTFIX reason.",
+          "Read the bug again: its disposition or reason did not match the update.",
         );
       return result;
     },

@@ -203,6 +203,7 @@ export interface Operation {
   pipeline?: boolean;
   body?: z.ZodTypeAny;
   query?: z.ZodTypeAny;
+  pathParameters?: Record<string, z.ZodTypeAny>;
   response: z.ZodTypeAny;
   status?: number;
   description?: string;
@@ -532,6 +533,21 @@ export const PipelineBug = DashboardBugDetail.extend({
   recording_urls: z.array(HttpsUrl),
   fix_reference: HttpsUrl,
 });
+export const BugUpdateInput = z
+  .object({
+    status: z.enum(["open", "fixed", "wontfix", "invalid"]),
+    reason: z.string().trim().min(1).max(20000).optional(),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      !["wontfix", "invalid"].includes(input.status) ||
+      input.reason !== undefined,
+    {
+      message: "A reason is required for wontfix and invalid dispositions.",
+      path: ["reason"],
+    },
+  );
 export const FixPrInput = z
   .object({
     bug_id: QAId,
@@ -673,15 +689,16 @@ export const operations: Operation[] = [
     response: PipelineBug,
   },
   {
-    id: "pipelineWontfix",
-    method: "POST",
-    path: "/api/v1/connection/bugs/wontfix",
+    id: "pipelineUpdateBug",
+    method: "PATCH",
+    path: "/api/v1/connection/bugs/{bug_id}",
+    pathParameters: { bug_id: QAId },
     pipeline: true,
     implemented: true,
-    summary: "Dismiss a bug with an evidence-backed reason",
-    body: z
-      .object({ bug_id: QAId, reason: z.string().trim().min(1).max(20000) })
-      .strict(),
+    summary: "Update a bug's disposition",
+    description:
+      "Sets an owned QA bug to open, fixed, wontfix or invalid. A reason is required for wontfix and invalid; reasons use QA's WONTFIX reason field for wontfix and append to QA notes for other statuses. Identical retries skip completed writes. Fixed is a factory disposition after confirming the fix landed, not a QA verification verdict. PR association remains a separate operation.",
+    body: BugUpdateInput,
     response: PipelineBug,
   },
   {
@@ -787,10 +804,14 @@ export const operations: Operation[] = [
     method: "GET",
     path: "/api/v1/dashboard/bugs",
     dashboard: true,
-    summary: "List open bugs with kinds, fix PRs and dashboard report links",
+    summary:
+      "List open or closed bugs with kinds, fix PRs and dashboard report links",
     implemented: true,
     query: z
-      .object({ page: z.coerce.number().int().min(1).max(100000).default(1) })
+      .object({
+        page: z.coerce.number().int().min(1).max(100000).default(1),
+        status: z.enum(["open", "closed"]).default("open"),
+      })
       .strict(),
     response: DashboardBugs,
   },

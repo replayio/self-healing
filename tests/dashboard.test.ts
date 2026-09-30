@@ -765,3 +765,44 @@ test("deployment permits dashboard framing and partitioned logout clears the bro
   ])
     assert.ok(cleared.includes(attribute));
 });
+
+test("closed bugs exclude active and unconfirmed reports and paginate after filtering", async () => {
+  const statuses = [
+    "open",
+    "reopened",
+    "judge-rejected",
+    "fixed",
+    "wontfix",
+    "invalid",
+    "pr-closed",
+  ];
+  const rows = Array.from({ length: 357 }, (_, i) =>
+    sampleBug(String(i), statuses[i % statuses.length]!),
+  );
+  const calls: number[] = [];
+  const data = dashboardData(async (path) => {
+    const p = new URL(path, "https://qa.example").searchParams;
+    assert.equal(p.get("project_id"), "qa-one");
+    assert.equal(p.get("status"), "all");
+    assert.equal(p.get("severitySort"), "desc");
+    const page = Number(p.get("page"));
+    calls.push(page);
+    return {
+      total: rows.length,
+      items: rows.slice((page - 1) * 100, page * 100),
+    };
+  });
+  const expected = rows.filter((b) =>
+    ["fixed", "wontfix", "invalid", "pr-closed"].includes(b.status),
+  );
+  for (let page = 1; page <= 3; page++) {
+    const result = await data.bugs(connection, page, "closed");
+    assert.equal(result.total, expected.length);
+    assert.equal(result.has_more, page * 100 < expected.length);
+    assert.deepEqual(
+      result.items.map((b) => b.id),
+      expected.slice((page - 1) * 100, page * 100).map((b) => b.id),
+    );
+  }
+  assert.deepEqual(calls, [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
+});
