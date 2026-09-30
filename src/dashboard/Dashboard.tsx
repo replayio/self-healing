@@ -1,10 +1,15 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { z } from "zod";
 import {
   DashboardOverview,
+  DashboardDay,
   DashboardBugs,
   DashboardBugDetail,
+  DashboardEvidence,
   DashboardReports,
+  DashboardSessions,
+  DashboardSessionDetail,
+  DashboardSessionSnapshot,
   type DashboardBug,
 } from "../api/contracts";
 import "./dashboard.css";
@@ -12,7 +17,7 @@ import "./dashboard.css";
 type Overview = z.infer<typeof DashboardOverview>;
 type Bug = z.infer<typeof DashboardBug>;
 type Reports = z.infer<typeof DashboardReports>;
-const tabs = ["overview", "bugs", "reports"] as const;
+const tabs = ["overview", "bugs", "reports", "sessions"] as const;
 type Tab = (typeof tabs)[number];
 const iconPaths = {
   overview: (
@@ -378,6 +383,108 @@ function FixPRs({ bug }: { bug: Bug }) {
     <>—</>
   );
 }
+const evidenceLabels: Record<string, string> = {
+  readsource: "Source",
+  code_search: "Code search",
+  logpoint: "Logpoint",
+  evaluate: "Evaluate",
+  screenshot: "Screenshot",
+  describescreenshot: "Screenshot",
+  consolemessages: "Console",
+  networkrequest: "Network",
+  network_replay: "Network",
+  userinteractions: "User interactions",
+  inspectelement: "Inspect element",
+  git_blame: "Git blame",
+  feature_flag_audit: "Feature flags",
+  schema_diff: "Schema diff",
+  provideddata: "Provided data",
+};
+export function EvidenceCards({
+  items,
+}: {
+  items?: z.infer<typeof DashboardEvidence>[];
+}) {
+  const [expanded, setExpanded] = useState<number | null>(null);
+  if (!items?.length) return null;
+  return (
+    <div className="dh-evidence">
+      <div className="dh-evidence-label">
+        Evidence <span>{items.length}</span>
+      </div>
+      {items.map((item, index) => {
+        const words = item.tool
+          .replace(/[_-]+/g, " ")
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .toLowerCase();
+        const label =
+          evidenceLabels[item.tool.trim().toLowerCase()] ??
+          (words.charAt(0).toUpperCase() + words.slice(1) || "Evidence");
+        const scalars = Object.entries(item.params ?? {}).filter(
+          ([key, value]) =>
+            !["recordingId", "recording_id"].includes(key) &&
+            ["string", "number"].includes(typeof value),
+        );
+        const preferred =
+          [
+            "url",
+            "path",
+            "file",
+            "filename",
+            "source",
+            "query",
+            "pattern",
+            "expression",
+            "selector",
+            "text",
+            "message",
+            "name",
+          ]
+            .map((key) => scalars.find(([name]) => name.toLowerCase() === key))
+            .find(Boolean) ?? scalars[0];
+        const preview = preferred
+          ? String(preferred[1]).replace(/\s+/g, " ").trim()
+          : "";
+        const open = expanded === index;
+        return (
+          <div className="dh-evidence-card" key={index}>
+            <button
+              className="dh-evidence-toggle"
+              aria-expanded={open}
+              onClick={() => setExpanded(open ? null : index)}
+            >
+              <span className="dh-evidence-tool" title={item.tool}>
+                {label}
+              </span>
+              <span className="dh-evidence-preview">
+                {preview.length > 90 ? preview.slice(0, 89) + "…" : preview}
+              </span>
+              <span
+                className={
+                  open ? "dh-evidence-chevron open" : "dh-evidence-chevron"
+                }
+              >
+                <Icon name="right" />
+              </span>
+            </button>
+            {open && (
+              <div className="dh-evidence-body">
+                <div className="dh-evidence-label">{item.tool} · params</div>
+                <pre>{JSON.stringify(item.params ?? {}, null, 2)}</pre>
+                {item.result != null && (
+                  <>
+                    <div className="dh-evidence-label">Result</div>
+                    <pre>{item.result}</pre>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 export function BugReport({
   bug,
 }: {
@@ -415,6 +522,9 @@ export function BugReport({
             <section key={label}>
               <h2>{label}</h2>
               <p className="dh-prose">{value}</p>
+              {label === "Root cause" && (
+                <EvidenceCards items={bug.analysis?.root_cause?.evidence} />
+              )}
             </section>
           ) : null,
         )}
@@ -425,6 +535,7 @@ export function BugReport({
               {bug.analysis.chronology.map((step, i) => (
                 <li className="dh-prose" key={i}>
                   {step.text}
+                  <EvidenceCards items={step.evidence} />
                   {step.screenshot_url && (
                     <a
                       href={step.screenshot_url}
@@ -452,6 +563,7 @@ export function BugReport({
               {bug.analysis.chain.map((step, i) => (
                 <li className="dh-prose" key={i}>
                   {step.text}
+                  <EvidenceCards items={step.evidence} />
                 </li>
               ))}
             </ol>
@@ -489,27 +601,42 @@ export function BugTable({ bugs }: { bugs: Bug[] }) {
           </tr>
         </thead>
         <tbody>
-          {bugs.map((b) => (
-            <tr key={b.id}>
-              <td>
-                <a href={b.url}>{b.title}</a>
-              </td>
-              <td>{bugKind(b.kind)}</td>
-              <td>
-                <span
-                  className={`dh-severity dh-severity-${["critical", "high", "medium", "low"].includes(b.severity) ? b.severity : "low"}`}
-                >
-                  {b.severity}
-                </span>
-              </td>
-              <td>
-                <FixPRs bug={b} />
-              </td>
-              <td>
-                <time dateTime={b.discovered_at}>{date(b.discovered_at)}</time>
-              </td>
-            </tr>
-          ))}
+          {[...bugs]
+            .sort((a, b) => {
+              const ranks: Record<string, number> = {
+                critical: 0,
+                high: 1,
+                medium: 2,
+                low: 3,
+              };
+              return (
+                (ranks[a.severity] ?? 4) - (ranks[b.severity] ?? 4) ||
+                Date.parse(b.discovered_at) - Date.parse(a.discovered_at)
+              );
+            })
+            .map((b) => (
+              <tr key={b.id}>
+                <td>
+                  <a href={b.url}>{b.title}</a>
+                </td>
+                <td>{bugKind(b.kind)}</td>
+                <td>
+                  <span
+                    className={`dh-severity dh-severity-${["critical", "high", "medium", "low"].includes(b.severity) ? b.severity : "low"}`}
+                  >
+                    {b.severity}
+                  </span>
+                </td>
+                <td>
+                  <FixPRs bug={b} />
+                </td>
+                <td>
+                  <time dateTime={b.discovered_at}>
+                    {date(b.discovered_at)}
+                  </time>
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
     </div>
@@ -609,14 +736,14 @@ export function ReportBody({ run }: { run: NonNullable<Reports["run"]> }) {
           </section>
         );
       })}
-      {(["User trends", "Friction", "New bugs"] as const).map((category) => {
+      {(["User trends", "Friction"] as const).map((category) => {
         const findings = run.output!.findings.filter(
           (f) => f.category === category,
         );
         return (
           findings.length > 0 && (
             <section key={category}>
-              <h3>{category === "New bugs" ? "Bug findings" : category}</h3>
+              <h3>{category}</h3>
               {findings.map((f, i) => (
                 <details className="dh-finding" key={i}>
                   <summary>
@@ -726,6 +853,292 @@ function ReportsTab() {
     </>
   );
 }
+function Snapshot({ id, timestamp }: { id: string; timestamp: number }) {
+  const result = useData(
+    `session-snapshot?${new URLSearchParams({ session_id: id, timestamp: String(timestamp) })}`,
+    DashboardSessionSnapshot,
+  );
+  if (!result.data)
+    return <LoadState {...result}>Loading screenshot…</LoadState>;
+  return (
+    <>
+      {result.data.images.length ? (
+        result.data.images.map((image, i) => (
+          <a
+            key={i}
+            href={`data:${image.mime_type};base64,${image.data}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <img
+              className="dh-session-screenshot"
+              src={`data:${image.mime_type};base64,${image.data}`}
+              alt={`Session at ${(timestamp / 1000).toFixed(1)} seconds`}
+            />
+          </a>
+        ))
+      ) : (
+        <p className="dh-note">No screenshot available at this point.</p>
+      )}
+      {result.data.tree && (
+        <details>
+          <summary>Component tree</summary>
+          <pre className="dh-session-tree">{result.data.tree}</pre>
+        </details>
+      )}
+    </>
+  );
+}
+function SessionInteraction({
+  id,
+  event,
+}: {
+  id: string;
+  event: { timestamp: number; text: string };
+}) {
+  const ref = useRef<HTMLLIElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    });
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <li ref={ref} className="dh-session-interaction">
+      <h3>
+        {(event.timestamp / 1000).toFixed(1)}s · {event.text}
+      </h3>
+      {visible ? (
+        <Snapshot id={id} timestamp={event.timestamp} />
+      ) : (
+        <p className="dh-note">Screenshot loads when visible.</p>
+      )}
+    </li>
+  );
+}
+function SessionDetail({ id, back }: { id: string; back: () => void }) {
+  const result = useData(
+    `session?session_id=${encodeURIComponent(id)}`,
+    DashboardSessionDetail,
+  );
+  return (
+    <>
+      <button onClick={back}>← Sessions</button>
+      <div className="dh-title-row">
+        <div>
+          <h1>User session</h1>
+          <p>{result.data?.session.user_email ?? id}</p>
+        </div>
+        <button
+          className="dh-icon-button"
+          aria-label="Refresh session"
+          onClick={result.retry}
+        >
+          <Icon name="refresh" />
+        </button>
+      </div>
+      {!result.data ? (
+        <LoadState {...result}>Loading Subtext interactions…</LoadState>
+      ) : (
+        <section className="dh-panel dh-report-body">
+          <p className="dh-note">
+            Received {date(result.data.session.first_received_at)} ·{" "}
+            {result.data.interactions.length} interactions
+          </p>
+          <ol className="dh-session-timeline">
+            {result.data.interactions.map((event, index) => (
+              <SessionInteraction
+                key={`${id}-${index}-${event.timestamp}`}
+                id={id}
+                event={event}
+              />
+            ))}
+          </ol>
+          {!result.data.interactions.length && (
+            <p className="dh-state">
+              No interaction rows available yet. See the Subtext timeline below
+              or refresh after processing.
+            </p>
+          )}
+          <details>
+            <summary>Full Subtext timeline</summary>
+            <pre className="dh-session-tree">
+              {result.data.timeline || "No timeline available yet."}
+            </pre>
+          </details>
+        </section>
+      )}
+    </>
+  );
+}
+function SessionsTab() {
+  const params = new URLSearchParams(window.location.search);
+  const today = new Date().toISOString().slice(0, 10);
+  const [day, setDay] = useState(
+    DashboardDay.safeParse(params.get("day")).data || today,
+  );
+  const [page, setPage] = useState(0);
+  const [id, setId] = useState(params.get("session"));
+  const result = useData(`sessions?day=${day}&page=${page}`, DashboardSessions);
+  useEffect(() => {
+    const pop = () => {
+      const p = new URLSearchParams(window.location.search);
+      setId(p.get("session"));
+      setDay(DashboardDay.safeParse(p.get("day")).data || today);
+      setPage(0);
+    };
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, [today]);
+  function navigate(nextDay: string, session: string | null = null) {
+    setDay(nextDay);
+    setPage(0);
+    setId(session);
+    window.history.pushState(
+      null,
+      "",
+      `/dashboard?${new URLSearchParams({ tab: "sessions", day: nextDay, ...(session ? { session } : {}) })}`,
+    );
+  }
+  const adjacent = (offset: number) =>
+    new Date(Date.parse(`${day}T00:00:00Z`) + offset * 86400000)
+      .toISOString()
+      .slice(0, 10);
+  if (id) return <SessionDetail key={id} id={id} back={() => navigate(day)} />;
+  return (
+    <>
+      <div className="dh-title-row">
+        <div>
+          <h1>User sessions</h1>
+          <p>Captured sessions by first received date · UTC</p>
+        </div>
+        <button
+          className="dh-icon-button"
+          aria-label="Refresh sessions"
+          onClick={result.retry}
+        >
+          <Icon name="refresh" />
+        </button>
+      </div>
+      <section className="dh-panel">
+        <div className="dh-panel-heading">
+          <h2>Sessions</h2>
+          <div className="dh-report-navigation">
+            <button
+              className="dh-icon-button"
+              aria-label="Previous session day"
+              onClick={() => navigate(adjacent(-1))}
+            >
+              <Icon name="left" />
+            </button>
+            <label className="dh-date-label">
+              <span className="dh-sr-only">Session date</span>
+              <input
+                type="date"
+                value={day}
+                max={today}
+                onChange={(e) => {
+                  if (e.target.value && e.target.value <= today)
+                    navigate(e.target.value);
+                }}
+              />
+            </label>
+            <button
+              className="dh-icon-button"
+              aria-label="Next session day"
+              disabled={day >= today}
+              onClick={() => navigate(adjacent(1))}
+            >
+              <Icon name="right" />
+            </button>
+          </div>
+        </div>
+        {!result.data ? (
+          <LoadState {...result}>Loading sessions…</LoadState>
+        ) : (
+          <>
+            {result.data.sessions.length ? (
+              <div className="dh-table-scroll">
+                <table className="dh-table">
+                  <thead>
+                    <tr>
+                      <th>Session</th>
+                      <th>User</th>
+                      <th>First received (UTC)</th>
+                      <th>Last received (UTC)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.data.sessions.map((session) => (
+                      <tr key={session.session_id}>
+                        <td>
+                          <a
+                            href={`/dashboard?${new URLSearchParams({ tab: "sessions", day, session: session.session_id })}`}
+                            onClick={(e) => {
+                              if (
+                                !e.metaKey &&
+                                !e.ctrlKey &&
+                                !e.shiftKey &&
+                                e.button === 0
+                              ) {
+                                e.preventDefault();
+                                navigate(day, session.session_id);
+                              }
+                            }}
+                          >
+                            {session.session_id}
+                          </a>
+                        </td>
+                        <td>{session.user_email ?? "Anonymous"}</td>
+                        <td>
+                          {new Date(session.first_received_at)
+                            .toISOString()
+                            .slice(11, 19)}
+                        </td>
+                        <td>
+                          {new Date(session.last_received_at)
+                            .toISOString()
+                            .replace("T", " ")
+                            .slice(0, 19)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="dh-state">No sessions captured on {date(day)}.</p>
+            )}
+            <div className="dh-pagination">
+              <button
+                className="dh-icon-button"
+                aria-label="Previous session page"
+                disabled={!page}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <Icon name="left" />
+              </button>
+              <span>Page {page + 1}</span>
+              <button
+                className="dh-icon-button"
+                aria-label="Next session page"
+                disabled={!result.data.has_more}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <Icon name="right" />
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+    </>
+  );
+}
 export default function Dashboard() {
   const initial = new URLSearchParams(window.location.search).get("tab");
   const [tab, setTab] = useState<Tab>(
@@ -815,6 +1228,8 @@ export default function Dashboard() {
           ) : (
             <BugsTab />
           )
+        ) : tab === "sessions" ? (
+          <SessionsTab />
         ) : (
           <ReportsTab />
         )}

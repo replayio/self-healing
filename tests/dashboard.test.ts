@@ -174,6 +174,22 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
           credentialVault(Buffer.alloc(32, 1).toString("base64")),
         ),
       dashboardAuth: () => f.auth,
+      dashboardSessions: (_qa, key) => {
+        assert.equal(key, "never-expose-subtext");
+        return {
+          sessions: async (c, day, page) => {
+            assert.equal(c.account_id, account);
+            assert.equal(day, "2026-09-30");
+            return { sessions: [], page, has_more: false };
+          },
+          session: async () => {
+            throw new HttpError(404, "not_found", "Session not found.");
+          },
+          snapshot: async () => {
+            throw new HttpError(404, "not_found", "Session not found.");
+          },
+        };
+      },
       dashboardData: (qa) => ({
         ...dashboardData(qa),
         bug: async (c, id) => {
@@ -266,6 +282,29 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
     assert.equal(read.headers.get("netlify-cdn-cache-control"), "no-store");
     assert.deepEqual(providerCalls, ["qa-one"]);
     assert.ok(!(await read.text()).includes("token"));
+    assert.equal(
+      (await call("/api/v1/dashboard/sessions?day=2026-09-30", { cookie }))
+        .status,
+      200,
+    );
+    for (const path of [
+      "/api/v1/dashboard/sessions?day=2026-09-30",
+      "/api/v1/dashboard/session?session_id=other",
+      "/api/v1/dashboard/session-snapshot?session_id=other&timestamp=1",
+    ])
+      assert.equal((await call(path)).status, 401);
+    for (const path of [
+      "/api/v1/dashboard/sessions?day=2026-02-31",
+      "/api/v1/dashboard/sessions?day=2026-09-30&project_id=other",
+      "/api/v1/dashboard/session",
+      "/api/v1/dashboard/session-snapshot?session_id=other&timestamp=-1",
+    ])
+      assert.equal((await call(path, { cookie })).status, 400);
+    assert.equal(
+      (await call("/api/v1/dashboard/session?session_id=other", { cookie }))
+        .status,
+      404,
+    );
     const detail = await call("/api/v1/dashboard/bug?bug_id=bug-1", { cookie });
     assert.equal(detail.status, 200);
     assert.equal((await detail.json()).id, "bug-1");
@@ -590,9 +629,23 @@ test("bug detail checks project ownership and returns report content without pro
     analysis: {
       root_cause: {
         text: "Root cause",
-        evidence: [{ params: { token: "private" } }],
+        evidence: [
+          {
+            tool: "ReadSource",
+            params: { path: "src/checkout.ts" },
+            result: "Source evidence",
+          },
+        ],
       },
-      chain: [{ text: "Cause", secret: "private" }],
+      chain: [
+        {
+          text: "Cause",
+          secret: "private",
+          evidence: [
+            { tool: "Evaluate", params: { expression: "total" }, result: "0" },
+          ],
+        },
+      ],
       chronology: [
         {
           text: "Click",
@@ -601,7 +654,7 @@ test("bug detail checks project ownership and returns report content without pro
               tool: "Screenshot",
               result:
                 "https://static.replay.io/recordings/recording/analysis/screenshot-100.jpg",
-              params: { token: "private" },
+              params: { time: 100 },
             },
           ],
         },
@@ -615,6 +668,18 @@ test("bug detail checks project ownership and returns report content without pro
   const result = await data.bug(connection, "bug-1");
   assert.equal(result.description, "Description");
   assert.equal(result.analysis?.root_cause?.text, "Root cause");
+  assert.deepEqual(
+    result.analysis?.root_cause?.evidence,
+    raw.analysis.root_cause.evidence,
+  );
+  assert.deepEqual(
+    result.analysis?.chain?.[0]?.evidence,
+    raw.analysis.chain[0]!.evidence,
+  );
+  assert.deepEqual(
+    result.analysis?.chronology?.[0]?.evidence,
+    raw.analysis.chronology[0]!.evidence,
+  );
   assert.equal(
     result.analysis?.chronology?.[0]?.screenshot_url,
     "https://static.replay.io/recordings/recording/analysis/screenshot-100.jpg",

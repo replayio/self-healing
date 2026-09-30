@@ -1,3 +1,4 @@
+import { dashboardSessions } from "./dashboard-sessions.ts";
 import {
   dashboardCookie,
   getDashboardAuth,
@@ -79,6 +80,7 @@ export function createHandler(
     accounts?: typeof getAccountService;
     dashboardAuth?: typeof getDashboardAuth;
     dashboardData?: typeof dashboardData;
+    dashboardSessions?: typeof dashboardSessions;
     pipelineData?: typeof pipelineData;
   } = {},
 ) {
@@ -272,25 +274,39 @@ export function createHandler(
             "connection_pending",
             "Finish connection setup first.",
           );
-        const data = (dependencies.dashboardData ?? dashboardData)(
-          qaClient({
-            ...process.env,
-            REPLAY_QA_API_TOKEN: credentials.qaToken,
-          }),
-        );
+        const qa = qaClient({
+          ...process.env,
+          REPLAY_QA_API_TOKEN: credentials.qaToken,
+        });
+        const sessionData = (
+          dependencies.dashboardSessions ?? dashboardSessions
+        )(qa, credentials.subtextKey);
+        const data = (dependencies.dashboardData ?? dashboardData)(qa);
         const input = (query ?? {}) as {
           page?: number;
           day?: string;
           bug_id?: string;
+          session_id?: string;
+          timestamp?: number;
         };
         const result =
-          operation.id === "dashboardOverview"
-            ? await data.overview(connection)
-            : operation.id === "dashboardBugs"
-              ? await data.bugs(connection, input.page!)
-              : operation.id === "dashboardBug"
-                ? await data.bug(connection, input.bug_id!)
-                : await data.reports(connection, input.day);
+          operation.id === "dashboardSessions"
+            ? await sessionData.sessions(connection, input.day!, input.page!)
+            : operation.id === "dashboardSession"
+              ? await sessionData.session(connection, input.session_id!)
+              : operation.id === "dashboardSessionSnapshot"
+                ? await sessionData.snapshot(
+                    connection,
+                    input.session_id!,
+                    input.timestamp!,
+                  )
+                : operation.id === "dashboardOverview"
+                  ? await data.overview(connection)
+                  : operation.id === "dashboardBugs"
+                    ? await data.bugs(connection, input.page!)
+                    : operation.id === "dashboardBug"
+                      ? await data.bug(connection, input.bug_id!)
+                      : await data.reports(connection, input.day);
         return json(operation.response.parse(result));
       }
       // Planned routes authenticate and validate requests, but never pretend to queue work.
