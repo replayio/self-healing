@@ -19,11 +19,11 @@ Initial setup supports session ingestion, QA reviews, reproduction journeys requ
 
 For now, running QA on the site is an optional part of setup. Ask the user: **“Would you like to configure QA testing for this site now, or skip it for now?”** Do not infer consent from the general request to set up Self Healing.
 
-If they decline or defer, finish the session-capture, reporting, and dashboard setup without configuring additional site QA or scheduling the fix/preview-testing loop. Say that optional QA configuration was skipped and can be added later. Do not make it a setup blocker or keep asking during the same setup.
+If they decline or defer, finish the session-capture, reporting, and dashboard setup with `start_exploration: false` when creating the connection. Do not start a base-site exploration or schedule additional site testing. Say that optional QA configuration was skipped and can be added later. Do not make it a setup blocker or keep asking during the same setup.
 
-This choice controls additional QA configuration by the factory. It does not disable the connected service’s existing session analysis, reports, reproduction journeys, or initial QA exploration.
+This choice controls initial base-site exploration and smoke-test runs. Session capture, session analysis, reports, and session-driven reproduction journeys stay enabled. Skipping base-site QA does not disable the self-healing bug/fix pipeline.
 
-If they opt in, follow [operate-self-healing](../operate-self-healing/SKILL.md) to arrange periodic bug triage (suggested every 15 minutes), record WONTFIX reasons for unsuitable reports, create fix PRs, and verify them against previews with QA. Setup acceptance remains delivery of real session inputs; do not wait for the first bug or report to complete setup.
+If they opt in, set `start_exploration: true` when creating the connection. Setup acceptance remains delivery of real session inputs; do not wait for the first bug or report to complete setup.
 
 ## Provision and store the account key
 
@@ -43,15 +43,15 @@ Repeating provisioning with the same valid Subtext key recovers the same account
 
 ## Connect the application
 
-GET `/api/v1/connection` using the account key. If it is connected, reuse its IDs. If it returns `not_connected`, POST the same path with:
+GET `/api/v1/connection` using the account key. If it is connected, reuse its IDs and saved `start_exploration` value. This is a creation-time choice, not a switch to stop or restart existing QA work. A different value on an existing connection returns 409; do not create a replacement account to change it. If it returns `not_connected`, POST the same path with:
 
 ```json
-{"name":"My application","production_url":"https://app.example.com"}
+{"name":"My application","production_url":"https://app.example.com","start_exploration":false}
 ```
 
-Recover interrupted setup by repeating that exact POST. Save the chosen name and URL in project configuration so retries use identical values. The connection creates one QA project for the account and configures reviews and daily reports. Different settings return 409; do not create a replacement account to bypass this conflict. The older `/api/v1/projects` configuration API is not a substitute for connection provisioning.
+Set `start_exploration` to the user’s choice: `false` to skip initial base-site QA, `true` to run it. Omission defaults to `false` for a new connection. Recover interrupted setup by repeating that exact POST. Save the chosen name, URL, and `start_exploration` value in project configuration so retries use identical values. The connection creates one QA project for the account and configures reviews and daily reports. Different settings return 409; do not create a replacement account to bypass this conflict. The older `/api/v1/projects` configuration API is not a substitute for connection provisioning.
 
-A connected response confirms configuration; verify session delivery after installing capture. QA project creation can start initial exploration, and QA work requires credit capacity. Report quota or credit blocks to the user/service operator; do not promise free or unlimited work.
+A connected response confirms configuration; verify session delivery after installing capture. QA project creation starts initial exploration and smoke-test runs only when `start_exploration` is true. QA work requires credit capacity. Report quota or credit blocks to the user/service operator; do not promise free or unlimited work.
 
 ## Choose where daily reports should go
 
@@ -163,7 +163,7 @@ Setup is complete when the deployed application's real session captures are succ
 
 Once delivery is verified, declare setup complete and open the dashboard for the user as described below. Do not wait for the session to go quiet, poll QA reviewers, or wait for a daily report. Do not schedule those checks as setup follow-ups or hold the setup handoff for them. Continue forwarding capture batches normally; no completion request or recording shutdown is needed.
 
-If the user opted into QA setup or separately requests ongoing operation, read `/api/v1/skills/operate-self-healing/SKILL.md`. On 401, check which credential is being used and do not fall back to Subtext bearer authentication. On 429 retry with backoff. On 503 or `provisioning_pending`, preserve IDs and report the operator action needed. On 501, stop that unsupported operation; never invent a replacement provider API.
+For ongoing self-healing bug triage and fixes, read `/api/v1/skills/operate-self-healing/SKILL.md`. On 401, check which credential is being used and do not fall back to Subtext bearer authentication. On 429 retry with backoff. On 503 or `provisioning_pending`, preserve IDs and report the operator action needed. On 501, stop that unsupported operation; never invent a replacement provider API.
 
 ## Open the dashboard
 

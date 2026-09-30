@@ -17,7 +17,11 @@ const endpoint =
 test("destination routes use the account's QA project and token, preserve other channels, and redact credentials", async () => {
   const db = new PGlite();
   try {
-    for (const name of ["002_connections.sql", "003_session_coordination.sql"])
+    for (const name of [
+      "002_connections.sql",
+      "003_session_coordination.sql",
+      "006_connection_exploration.sql",
+    ])
       await db.exec(
         await readFile(
           new URL(`../migrations/${name}`, import.meta.url),

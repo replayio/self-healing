@@ -239,10 +239,17 @@ export const AuxiliaryArtifact = z
     "Unsupported auxiliary namespace/key pair",
   );
 const ConnectionInput = object({
+  start_exploration: z
+    .boolean()
+    .optional()
+    .describe(
+      "Start initial base-site QA only after user opt-in. Defaults to false for new connections; omitted on retries preserves the saved choice.",
+    ),
   name: z.string().trim().min(1).max(100),
   production_url: Url,
 });
 const ConnectionResponse = object({
+  start_exploration: z.boolean(),
   id: Id,
   qa_project_id: z.string().nullable(),
   status: z.enum(["connected", "pending"]),

@@ -44,7 +44,7 @@ Copy the setup prompt from the landing page into a factory or coding agent:
 
 > Read the API at https://self-healing.replay.io/api/v1 and follow its setup skill to set up Self Healing for this project.
 
-`GET /api/v1` is the public starting point. It links to the setup skill, OpenAPI, and `GET /api/v1/skills`, the public skill catalog. Agents should follow the served setup skill to inspect the target project, provision credentials, implement capture forwarding, and verify that real session captures are accepted by Self Healing. Site QA configuration is optional during setup: the skill asks the user whether to configure it now or skip it. No credentials are required to discover or read skills.
+`GET /api/v1` is the public starting point. It links to the setup skill, OpenAPI, and `GET /api/v1/skills`, the public skill catalog. Agents should follow the served setup skill to inspect the target project, provision credentials, implement capture forwarding, and verify that real session captures are accepted by Self Healing. Initial base-site QA is optional during setup: the skill asks the user, then passes `start_exploration` to the connection API. New connections default to false; session processing and reports stay enabled. No credentials are required to discover or read skills.
 
 Set `SELF_HEALING_URL` to your deployed origin and `SELF_HEALING_API_KEY` to the account key returned by provisioning. Fetch these public resources first:
 

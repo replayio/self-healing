@@ -52,6 +52,7 @@ test("deployment upgrades only ready account-owned connections with the correspo
       "002_connections.sql",
       "003_session_coordination.sql",
       "004_accounts.sql",
+      "006_connection_exploration.sql",
     ])
       await db.exec(
         await readFile(

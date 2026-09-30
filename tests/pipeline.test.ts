@@ -22,6 +22,7 @@ const connection = {
   create_attempted: true,
   created_at: new Date(),
   reporting_start_day: new Date(),
+  start_exploration: false,
 } satisfies Connection;
 const input = {
   bug_id: "bug-1",
