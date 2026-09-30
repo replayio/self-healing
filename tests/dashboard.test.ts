@@ -54,7 +54,7 @@ test("dashboard links open independent browser sessions without consumption or e
   const f = await fixture();
   try {
     const link = await f.auth.launch(account);
-    assert.equal(link.session_ttl_seconds, 86400);
+    assert.equal(link.session_ttl_seconds, 604800);
     assert.ok(Date.parse(link.expires_at) > Date.now() + 604800000 - 5000);
     assert.ok(Date.parse(link.expires_at) <= Date.now() + 604800000 + 1000);
     const ticket = new URLSearchParams(new URL(link.url).hash.slice(1)).get(
@@ -109,7 +109,7 @@ test("dashboard links open independent browser sessions without consumption or e
       "SELECT EXTRACT(EPOCH FROM expires_at-now()) AS seconds FROM dashboard_sessions WHERE kind='browser'",
       [],
     );
-    assert.ok(Number(duration!.seconds) > 86390);
+    assert.ok(Number(duration!.seconds) > 604790);
     await f.query(
       "UPDATE dashboard_sessions SET expires_at=now()-interval '1 second'",
       [],
@@ -283,7 +283,7 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
       "HttpOnly",
       "SameSite=None",
       "Partitioned",
-      "Max-Age=86400",
+      "Max-Age=604800",
       "Path=/",
     ])
       assert.ok(cookie.includes(flag));

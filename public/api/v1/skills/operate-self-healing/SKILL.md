@@ -80,5 +80,5 @@ Once the current revision's tests and available QA/preview checks pass with adeq
 
 - Session capture forwarding remains installed by the setup skill. Continue forwarding without sending a manual completion request.
 - `GET /api/v1/connection/reports?day=YYYY-MM-DD` reads a daily report; omit `day` for the latest and navigation metadata. Reports are not prerequisites for triage or fixing a reported bug.
-- `POST /api/v1/dashboard-sessions` returns a dashboard URL reusable for seven days. Each opening establishes an independent 24-hour browser session. Open it for the user in the most appropriate available surface, or provide an **Open dashboard** link.
+- `POST /api/v1/dashboard-sessions` returns a dashboard URL reusable for seven days. Each opening establishes an independent seven-day browser session. Open it for the user in the most appropriate available surface, or provide an **Open dashboard** link.
 - Read error status and code. Authentication/configuration failures need resolution; retry transient reads with backoff. Do not treat empty data or failed calls as successful work. Never call QA with the customer's Subtext or Self Healing key: the service supplies its dedicated QA credential internally.

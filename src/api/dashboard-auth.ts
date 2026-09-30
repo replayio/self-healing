@@ -20,7 +20,7 @@ function cookieToken(request: Request) {
       ?.slice(DASHBOARD_COOKIE.length + 1) ?? ""
   );
 }
-export function dashboardCookie(value: string, age = 86400) {
+export function dashboardCookie(value: string, age = 604800) {
   return `${DASHBOARD_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=None; Partitioned; Max-Age=${age}`;
 }
 export function requireDashboardOrigin(request: Request) {
@@ -68,14 +68,14 @@ export function dashboardAuth(
       return {
         url: new URL(`/dashboard#ticket=${ticket}`, base).href,
         expires_at: expires.toISOString(),
-        session_ttl_seconds: 86400 as const,
+        session_ttl_seconds: 604800 as const,
       };
     },
     async redeem(ticket: string) {
       const session = token();
       const rows = await query(
         `INSERT INTO dashboard_sessions(token_hash,account_id,kind,expires_at)
-        SELECT $2,account_id,'browser',now()+interval '24 hours' FROM dashboard_sessions
+        SELECT $2,account_id,'browser',now()+interval '7 days' FROM dashboard_sessions
         WHERE token_hash=$1 AND kind='launch' AND expires_at > now() RETURNING account_id`,
         [hash(ticket), hash(session)],
       );

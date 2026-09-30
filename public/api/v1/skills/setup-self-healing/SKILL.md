@@ -169,6 +169,6 @@ For ongoing self-healing bug triage and fixes, read `/api/v1/skills/operate-self
 
 When setup is complete, call `POST /api/v1/dashboard-sessions` with the server-side account key and open the returned `url` for the user in the most appropriate way available. If you cannot open it directly, provide a clickable **Open dashboard** link. Generate a fresh link for the handoff; if it expires before the user opens it, request another. Keep the account key server-side.
 
-The returned URL can be opened directly in an iframe or embedded artifact. Links are reusable for seven days; each browser context receives a read-only session lasting 24 hours.
+The returned URL can be opened directly in an iframe or embedded artifact. Links are reusable for seven days; each browser context receives a read-only session lasting seven days.
 
 The dashboard has Overview, Bugs, Reports, and Sessions tabs. Overview shows bug counts and daily session activity; Bugs shows kinds, fix PRs, and bug reports within Self Healing; Reports lets the user cycle through daily reports; Sessions shows captured sessions by day with interactions and screenshots. No separate signup or QA project access is needed.

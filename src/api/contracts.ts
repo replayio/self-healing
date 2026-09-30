@@ -719,10 +719,10 @@ export const operations: Operation[] = [
     response: z.object({
       url: HttpsUrl,
       expires_at: Timestamp,
-      session_ttl_seconds: z.literal(86400),
+      session_ttl_seconds: z.literal(604800),
     }),
     description:
-      "Call server-side with the account bearer key. The link can be opened multiple times for seven days. Each opening establishes a read-only browser session lasting 24 hours. Do not publish launch links; request a fresh one when needed.",
+      "Call server-side with the account bearer key. The link can be opened multiple times for seven days. Each opening establishes a read-only browser session lasting seven days. Do not publish launch links; request a fresh one when needed.",
   },
   {
     id: "redeemDashboardSession",
