@@ -344,12 +344,6 @@ function OverviewTab() {
   const result = useData("overview", DashboardOverview);
   if (!result.data) return <LoadState {...result}>Loading overview…</LoadState>;
   const d = result.data;
-  const cards: [string, number, keyof typeof iconPaths][] = [
-    ["Open bugs", d.open_bugs, "bugs"],
-    ["Closed bugs", d.closed_bugs, "check"],
-    ["New open bugs · 24h", d.new_open_bugs, "bugs"],
-    ["Sessions", d.sessions, "sessions"],
-  ];
   return (
     <>
       <div className="dh-title-row">
@@ -365,16 +359,57 @@ function OverviewTab() {
           <Icon name="refresh" />
         </button>
       </div>
-      <div className="dh-cards">
-        {cards.map(([label, value, icon]) => (
-          <article className="dh-card" key={label}>
+      <div className="dh-summary-cards">
+        <article className="dh-card" aria-label="Project bug counts">
+          <div>
+            <span>Open bugs</span>
+            <Icon name="bugs" />
+          </div>
+          <strong>{count(d.open_bugs)}</strong>
+          <dl className="dh-card-breakdown">
             <div>
-              <span>{label}</span>
-              <Icon name={icon} />
+              <dt>Fixed</dt>
+              <dd>{count(d.fixed_bugs)}</dd>
             </div>
-            <strong>{count(value)}</strong>
-          </article>
-        ))}
+            <div>
+              <dt>Wontfix</dt>
+              <dd>{count(d.wontfix_bugs)}</dd>
+            </div>
+            <div>
+              <dt>Invalid</dt>
+              <dd>{count(d.invalid_bugs)}</dd>
+            </div>
+          </dl>
+        </article>
+        <article
+          className="dh-card"
+          aria-label="Session success over the last 24 hours"
+        >
+          <div>
+            <span>Session success rate · 24h</span>
+            <Icon name="sessions" />
+          </div>
+          <strong>
+            {d.sessions_24h > 0
+              ? `${new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format((100 * (d.sessions_24h - d.serious_sessions_24h)) / d.sessions_24h)}%`
+              : "—"}
+          </strong>
+          <dl className="dh-card-breakdown">
+            <div>
+              <dt>Total sessions</dt>
+              <dd>{count(d.sessions_24h)}</dd>
+            </div>
+            <div>
+              <dt>With serious errors</dt>
+              <dd>{count(d.serious_sessions_24h)}</dd>
+            </div>
+          </dl>
+          <p className="dh-card-note">
+            {d.sessions_24h === 0
+              ? "No sessions in the last 24 hours."
+              : "Sessions without detected serious errors. Includes unreviewed sessions."}
+          </p>
+        </article>
       </div>
       <SessionChart days={d.days} />
     </>
