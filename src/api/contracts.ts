@@ -532,7 +532,7 @@ export const PipelineBug = DashboardBugDetail.extend({
   recording_urls: z.array(HttpsUrl),
   fix_reference: HttpsUrl,
 });
-export const VerificationInput = z
+export const FixPrInput = z
   .object({
     bug_id: QAId,
     pr_url: z
@@ -541,10 +541,12 @@ export const VerificationInput = z
       .regex(
         /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/pull\/[1-9][0-9]*$/,
       ),
-    head_sha: Sha,
-    preview_url: HttpsUrl,
   })
   .strict();
+export const VerificationInput = FixPrInput.extend({
+  head_sha: Sha,
+  preview_url: HttpsUrl,
+}).strict();
 export const BugVerification = VerificationInput.extend({
   run_id: QAId,
   status: z.string(),
@@ -683,6 +685,18 @@ export const operations: Operation[] = [
     response: PipelineBug,
   },
   {
+    id: "pipelineAssociatePr",
+    method: "POST",
+    path: "/api/v1/connection/bugs/fix-prs",
+    pipeline: true,
+    implemented: true,
+    summary: "Associate a factory-authored PR with a bug",
+    description:
+      "Idempotently stores the PR association for an owned bug and returns its updated report. Call once for each bug the PR fixes. No QA GitHub integration is required. Does not change bug status or assert PR state.",
+    body: FixPrInput,
+    response: PipelineBug,
+  },
+  {
     id: "pipelineVerify",
     method: "POST",
     path: "/api/v1/connection/bug-verifications",
@@ -690,7 +704,7 @@ export const operations: Operation[] = [
     implemented: true,
     summary: "Rerun a bug's original QA journey against a preview",
     description:
-      "Requires an available original journey. Stores PR/head/preview references in the QA run goal; the factory must confirm the deployed preview matches the SHA. Creation is not idempotent: after an uncertain response, list runs before retrying. Does not mark the bug fixed or attest to the preview's commit.",
+      "Requires a bug ID and an available original journey. Associates the PR with the bug and supplies the bug report to QA without requiring a GitHub integration. Call once for each bug fixed by the PR. Stores PR/head/preview references in the QA run goal; the factory must confirm the deployed preview matches the SHA. Creation is not idempotent: after an uncertain response, list runs before retrying. Does not mark the bug fixed or attest to the preview's commit.",
     body: VerificationInput,
     response: BugVerification,
     status: 201,

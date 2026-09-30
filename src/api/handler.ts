@@ -1,3 +1,4 @@
+import { getFixPrStore } from "./fix-prs.ts";
 import { dashboardSessions } from "./dashboard-sessions.ts";
 import {
   dashboardCookie,
@@ -6,7 +7,7 @@ import {
 } from "./dashboard-auth.ts";
 import { dashboardData } from "./dashboard-data.ts";
 import { pipelineData } from "./pipeline.ts";
-import { VerificationInput } from "./contracts.ts";
+import { FixPrInput, VerificationInput } from "./contracts.ts";
 import { qaClient } from "./qa.ts";
 import { getAccountService } from "./accounts.ts";
 import { getConnectionService } from "./connections.ts";
@@ -82,6 +83,7 @@ export function createHandler(
     dashboardData?: typeof dashboardData;
     dashboardSessions?: typeof dashboardSessions;
     pipelineData?: typeof pipelineData;
+    fixPrs?: typeof getFixPrStore;
   } = {},
 ) {
   return async (request: Request): Promise<Response> => {
@@ -256,6 +258,8 @@ export function createHandler(
             ...process.env,
             REPLAY_QA_API_TOKEN: credentials.qaToken,
           }),
+          undefined,
+          dependencies.fixPrs ?? getFixPrStore,
         );
         const input = (body ?? query ?? {}) as {
           page?: number;
@@ -269,13 +273,18 @@ export function createHandler(
               ? await data.bug(connection, input.bug_id!)
               : operation.id === "pipelineWontfix"
                 ? await data.wontfix(connection, input.bug_id!, input.reason!)
-                : operation.id === "pipelineVerify"
-                  ? await data.verify(connection, VerificationInput.parse(body))
-                  : await data.verifications(
-                      connection,
-                      input.bug_id!,
-                      input.page!,
-                    );
+                : operation.id === "pipelineAssociatePr"
+                  ? await data.associatePr(connection, FixPrInput.parse(body))
+                  : operation.id === "pipelineVerify"
+                    ? await data.verify(
+                        connection,
+                        VerificationInput.parse(body),
+                      )
+                    : await data.verifications(
+                        connection,
+                        input.bug_id!,
+                        input.page!,
+                      );
         return json(operation.response.parse(result), operation.status ?? 200);
       }
       if (operation.dashboard) {
@@ -298,7 +307,11 @@ export function createHandler(
         const sessionData = (
           dependencies.dashboardSessions ?? dashboardSessions
         )(qa, credentials.subtextKey);
-        const data = (dependencies.dashboardData ?? dashboardData)(qa);
+        const data = (dependencies.dashboardData ?? dashboardData)(
+          qa,
+          Date.now(),
+          dependencies.fixPrs ?? getFixPrStore,
+        );
         const input = (query ?? {}) as {
           page?: number;
           day?: string;
