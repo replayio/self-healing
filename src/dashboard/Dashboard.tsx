@@ -609,14 +609,14 @@ export function ReportBody({ run }: { run: NonNullable<Reports["run"]> }) {
           </section>
         );
       })}
-      {(["User trends", "Friction", "New bugs"] as const).map((category) => {
+      {(["User trends", "Friction"] as const).map((category) => {
         const findings = run.output!.findings.filter(
           (f) => f.category === category,
         );
         return (
           findings.length > 0 && (
             <section key={category}>
-              <h3>{category === "New bugs" ? "Bug findings" : category}</h3>
+              <h3>{category}</h3>
               {findings.map((f, i) => (
                 <details className="dh-finding" key={i}>
                   <summary>
