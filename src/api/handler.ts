@@ -273,18 +273,20 @@ export function createHandler(
               ? await data.bug(connection, input.bug_id!)
               : operation.id === "pipelineWontfix"
                 ? await data.wontfix(connection, input.bug_id!, input.reason!)
-                : operation.id === "pipelineAssociatePr"
-                  ? await data.associatePr(connection, FixPrInput.parse(body))
-                  : operation.id === "pipelineVerify"
-                    ? await data.verify(
-                        connection,
-                        VerificationInput.parse(body),
-                      )
-                    : await data.verifications(
-                        connection,
-                        input.bug_id!,
-                        input.page!,
-                      );
+                : operation.id === "pipelineFixed"
+                  ? await data.fixed(connection, FixPrInput.parse(body))
+                  : operation.id === "pipelineAssociatePr"
+                    ? await data.associatePr(connection, FixPrInput.parse(body))
+                    : operation.id === "pipelineVerify"
+                      ? await data.verify(
+                          connection,
+                          VerificationInput.parse(body),
+                        )
+                      : await data.verifications(
+                          connection,
+                          input.bug_id!,
+                          input.page!,
+                        );
         return json(operation.response.parse(result), operation.status ?? 200);
       }
       if (operation.dashboard) {
@@ -314,6 +316,7 @@ export function createHandler(
         );
         const input = (query ?? {}) as {
           page?: number;
+          status?: "open" | "closed";
           day?: string;
           bug_id?: string;
           session_id?: string;
@@ -333,7 +336,7 @@ export function createHandler(
                 : operation.id === "dashboardOverview"
                   ? await data.overview(connection)
                   : operation.id === "dashboardBugs"
-                    ? await data.bugs(connection, input.page!)
+                    ? await data.bugs(connection, input.page!, input.status)
                     : operation.id === "dashboardBug"
                       ? await data.bug(connection, input.bug_id!)
                       : await data.reports(connection, input.day);

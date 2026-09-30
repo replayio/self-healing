@@ -565,3 +565,21 @@
   cursor: pointer;
   color: var(--text);
 }
+
+.dh-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.dh-tabs button {
+  padding: 8px 14px;
+  border: 1px solid #d8ded8;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.dh-tabs button[aria-pressed="true"] {
+  background: #e8eee5;
+  font-weight: 600;
+}

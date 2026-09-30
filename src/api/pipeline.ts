@@ -196,6 +196,41 @@ export function pipelineData(
       await fixPrs().associate(c, input);
       return bug(c, input.bug_id);
     },
+    async fixed(c: Connection, input: z.infer<typeof FixPrInput>) {
+      const current = await bug(c, input.bug_id);
+      if (!["open", "reopened", "fixed"].includes(current.status))
+        throw new HttpError(
+          409,
+          "disposition_changed",
+          "Read the bug again: only an open or already-fixed bug can record a landed fix.",
+        );
+      await fixPrs().associate(c, input);
+      if (current.status !== "fixed") {
+        const row = owned(
+          await read(
+            Row,
+            `/api/v1/bugs/${encodeURIComponent(input.bug_id)}`,
+            { status: "fixed" },
+            "PATCH",
+          ),
+          c,
+        );
+        if (row.id !== input.bug_id)
+          throw new HttpError(
+            503,
+            "qa_contract_changed",
+            "QA returned a different bug.",
+          );
+      }
+      const result = await bug(c, input.bug_id);
+      if (result.status !== "fixed")
+        throw new HttpError(
+          409,
+          "disposition_changed",
+          "Read the bug again: its disposition did not match the requested fixed status.",
+        );
+      return result;
+    },
     async wontfix(c: Connection, id: string, reason: string) {
       await rawBug(c, id);
       await read(

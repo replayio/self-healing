@@ -83,6 +83,22 @@ If there is no preview, the preview is inaccessible, or the original reproductio
 
 Follow the target repository's policies and the user's instructions for PR readiness, review, and merging. Report verification results and PR status to the user. Keep tracking the PR after handoff; a rejected, changed, or closed-unmerged PR may leave the bug needing work. Record merged PRs in the factory task and check the deployed behavior before taking further action. An open QA bug alone is not a reason to create another PR for an already-landed fix. This API does not mark a bug fixed on PR creation or a preview pass.
 
+After confirming that the associated fix PR **merged** and addresses this bug, persist the resolution (including for previously merged PRs whose bugs remain open):
+
+```http
+POST /api/v1/connection/bugs/fixed
+Authorization: Bearer <Self Healing account key>
+Content-Type: application/json
+
+{
+  "bug_id": "<bug id>",
+  "pr_url": "https://github.com/<owner>/<repo>/pull/<number>"
+}
+```
+
+Confirm the response has `status: "fixed"` and the PR link. This records the factory's landed-fix disposition in QA and moves the bug from the dashboard's Open bugs section to Closed bugs. It does not assert a QA verification verdict. A PR closed without merging is not a fix: keep that bug open. The service has no GitHub credentials to independently check private PRs, so the factory must check merge state using its repository access. On an uncertain response, read the bug before retrying; an already-fixed bug does not repeat the QA status update. Continue tracking saved PRs even after their bugs leave the open list.
+
+
 ## Other operations and failures
 
 - `GET /api/v1/connection/report-destinations` reads delivery settings. PATCH the same path to set `email: {addresses: [...]}`, `slack: {webhook_url: ...}`, or `discord: {webhook_url: ...}`. Omitted channels are preserved; `null` disables a channel. QA sends completed daily reports to those destinations. Webhook URLs stay server-side. Configuration is not proof of delivery.

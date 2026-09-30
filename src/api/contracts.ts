@@ -685,6 +685,18 @@ export const operations: Operation[] = [
     response: PipelineBug,
   },
   {
+    id: "pipelineFixed",
+    method: "POST",
+    path: "/api/v1/connection/bugs/fixed",
+    pipeline: true,
+    implemented: true,
+    summary: "Record a factory-confirmed landed fix",
+    description:
+      "The factory must confirm that this PR merged and fixes this bug. Persists the PR association and sets the owned QA bug to fixed. This is a factory disposition, not a QA verification verdict; closed-unmerged PRs must not use this endpoint. Repeating for an already-fixed bug does not repeat the QA status update.",
+    body: FixPrInput,
+    response: PipelineBug,
+  },
+  {
     id: "pipelineAssociatePr",
     method: "POST",
     path: "/api/v1/connection/bugs/fix-prs",
@@ -787,10 +799,14 @@ export const operations: Operation[] = [
     method: "GET",
     path: "/api/v1/dashboard/bugs",
     dashboard: true,
-    summary: "List open bugs with kinds, fix PRs and dashboard report links",
+    summary:
+      "List open or closed bugs with kinds, fix PRs and dashboard report links",
     implemented: true,
     query: z
-      .object({ page: z.coerce.number().int().min(1).max(100000).default(1) })
+      .object({
+        page: z.coerce.number().int().min(1).max(100000).default(1),
+        status: z.enum(["open", "closed"]).default("open"),
+      })
       .strict(),
     response: DashboardBugs,
   },

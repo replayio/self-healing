@@ -183,6 +183,37 @@ test("pipeline reads scoped reports and persists WONTFIX through QA PATCH with a
   assert.equal(f.calls.at(-1)?.method, "GET");
 });
 
+test("factory landed fixes persist QA status and PR association without repeating updates", async () => {
+  const f = fixture();
+  const result = await f.data.fixed(connection, input);
+  assert.equal(result.status, "fixed");
+  assert.equal(result.fix_prs[0]?.url, input.pr_url);
+  assert.deepEqual(f.calls.find((c) => c.method === "PATCH")?.body, {
+    status: "fixed",
+  });
+  assert.equal(f.calls.at(-1)?.method, "GET");
+  await f.data.fixed(connection, input);
+  assert.equal(f.calls.filter((c) => c.method === "PATCH").length, 1);
+  const other = fixture();
+  other.bug.project_id = "qa-other";
+  await assert.rejects(
+    other.data.fixed(connection, input),
+    (e: HttpError) => e.status === 404,
+  );
+  assert.equal(other.links.size, 0);
+  assert.ok(!other.calls.some((c) => c.method === "PATCH"));
+  for (const status of ["wontfix", "invalid", "judge-rejected", "pr-closed"]) {
+    const dismissed = fixture();
+    dismissed.bug.status = status;
+    await assert.rejects(
+      dismissed.data.fixed(connection, input),
+      (e: HttpError) => e.code === "disposition_changed",
+    );
+    assert.equal(dismissed.links.size, 0);
+    assert.ok(!dismissed.calls.some((c) => c.method === "PATCH"));
+  }
+});
+
 test("verification reruns the original journey version on the preview and retains pending/failure outcomes", async () => {
   const f = fixture();
   const pending = await f.data.verify(connection, input);
@@ -399,6 +430,9 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
   const result = await call("bug-verifications?bug_id=bug-1&page=1");
   assert.equal(result.status, 200);
   assert.equal((await result.json()).items.length, 1);
+  const fixed = await call("bugs/fixed", association);
+  assert.equal(fixed.status, 200);
+  assert.equal((await fixed.json()).status, "fixed");
   assert.equal(
     (
       await call("bugs/wontfix", {
@@ -408,6 +442,14 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
     ).status,
     200,
   );
+  assert.equal((await call("bugs/fixed", association, false)).status, 401);
+  assert.equal(
+    (await call("bugs/fixed", { ...association, account_id: account })).status,
+    400,
+  );
+  assert.equal((await call("bugs/fixed", { bug_id: "bug-1" })).status, 400);
+  // Existing WONTFIX dispositions cannot be silently overwritten.
+  assert.equal((await call("bugs/fixed", association)).status, 409);
   const spec = getOpenApiSpec();
   const op = spec.paths["/api/v1/connection/bug-verifications"]!.post as {
     security: unknown;
