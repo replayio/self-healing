@@ -1,3 +1,4 @@
+import type { getFixPrStore } from "./fix-prs.ts";
 import { z } from "zod";
 import {
   DashboardBug,
@@ -147,7 +148,14 @@ const DAY = 86400000;
 export function dashboardData(
   qa: ReturnType<typeof qaClient>,
   now = Date.now(),
+  fixPrs?: typeof getFixPrStore,
 ) {
+  async function augment<T extends z.infer<typeof DashboardBug>>(
+    c: Connection,
+    bugs: T[],
+  ) {
+    return fixPrs ? fixPrs().augment(c, bugs) : bugs;
+  }
   const deadline = Date.now() + 22000;
   async function read<T>(schema: z.ZodType<T>, path: string): Promise<T> {
     if (Date.now() > deadline)
@@ -336,7 +344,7 @@ export function dashboardData(
         );
       const b = parsed.data;
       return DashboardBugDetail.parse({
-        ...bug(b),
+        ...(await augment(c, [bug(b)]))[0],
         description: b.description ?? null,
         reproduction_steps: b.reproduction_steps ?? null,
         expected_behavior: b.expected_behavior ?? null,
@@ -361,7 +369,10 @@ export function dashboardData(
         `${bugsPath(c)}&status=open&severitySort=desc&page=${page}`,
       );
       return DashboardBugs.parse({
-        items: result.items.map((b) => bug(b)),
+        items: await augment(
+          c,
+          result.items.map((b) => bug(b)),
+        ),
         total: result.total,
         page,
         has_more: page * 100 < result.total,
@@ -374,11 +385,14 @@ export function dashboardData(
       );
       const run = result.run;
       if (!run) return DashboardReports.parse({ ...result, run: null });
-      const bugs = run.bugs.map((b) => ({
-        ...bug({ ...b, discovered_at: b.opened_at }),
-        is_duplicate: b.is_duplicate,
-        impacted_sessions: b.impacted_sessions,
-      }));
+      const bugs = await augment(
+        c,
+        run.bugs.map((b) => ({
+          ...bug({ ...b, discovered_at: b.opened_at }),
+          is_duplicate: b.is_duplicate,
+          impacted_sessions: b.impacted_sessions,
+        })),
+      );
       return DashboardReports.parse({
         ...result,
         run: {
