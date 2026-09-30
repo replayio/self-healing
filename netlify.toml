@@ -35,7 +35,7 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     X-Frame-Options = "DENY"
 
-# Dashboard navigation and refresh load the SPA, without rewriting unknown APIs.
+# Client-side routes load the SPA shell, without rewriting API paths.
 [[redirects]]
   from = "/dashboard"
   to = "/index.html"
@@ -43,6 +43,26 @@
 
 [[redirects]]
   from = "/dashboard/"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/setup"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/api"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/skills"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/skills/*"
   to = "/index.html"
   status = 200
 
