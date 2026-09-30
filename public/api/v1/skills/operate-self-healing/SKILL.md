@@ -13,7 +13,7 @@ Arrange a recurring task in the factory, suggested **every 15 minutes**. Each ru
 
 1. `GET /api/v1/connection` should return `status: "connected"`.
 2. `GET /api/v1/connection/bugs?page=1` returns `items`, `total`, `page`, and `has_more`. Continue through all pages while `has_more` is true. Open includes reopened bugs. Do not use the legacy `/projects/.../bugs` routes; they are unimplemented.
-3. For each report, `GET /api/v1/connection/bug?bug_id=<id>` returns its description, kind, severity, reproduction, expected/actual behavior, analysis, recording URLs, notes, existing fix PRs, and `fix_reference`.
+3. For each report, `GET /api/v1/connection/bug?bug_id=<id>` returns its description, kind, severity, reproduction, expected/actual behavior, analysis, recording URLs, notes, and existing fix PRs.
 4. Check existing `fix_prs`, the repository's PRs, and saved factory tasks before starting work. Resume a matching open PR instead of writing another. A closed or unrelated PR is not evidence that the bug is fixed.
 
 Stay quiet when there is nothing actionable. Surface newly ready PRs, evidence-backed dispositions, and blockers that need the user's help. Review generation and daily reports run inside Self Healing; this factory loop consumes bugs rather than polling reviewer completion as a prerequisite.
@@ -39,7 +39,16 @@ The response is the updated bug. Check `status: "wontfix"` and `resolution` (the
 
 For a valid, appropriate report, follow the target repository's development and PR instructions. Reproduce the defect, implement a focused fix, and run relevant tests. Explain the defect, change, and checks actually performed.
 
-Include a standalone `Fixes <fix_reference>` line in the PR body, substituting the exact `fix_reference` returned by Self Healing. This is QA's machine-readable bug reference; it does not require the user to open the QA project. QA can associate it automatically when the repository's QA GitHub integration is configured. Save the PR in the factory task even when that integration is absent. Do not put an account key or dashboard launch ticket in the PR.
+Associate the PR with every Self Healing bug it fixes by calling `POST /api/v1/connection/bugs/fix-prs` once per bug:
+
+```json
+{
+  "bug_id": "<bug id>",
+  "pr_url": "https://github.com/owner/repository/pull/123"
+}
+```
+
+The response is the updated bug; confirm that `fix_prs` includes the PR URL. Association is idempotent, so repeating the request after an uncertain response is safe. The agent owns this association: PR-body references and the QA GitHub bot are not required. Save the bug/PR association in the factory task as well. Do not put an account key or dashboard launch ticket in the PR.
 
 Keep the bug open while the fix awaits verification and landing. PR creation and a green build do not establish that the reported behavior is fixed. Do not set a bug to `fixed` just to trigger testing.
 
@@ -47,7 +56,7 @@ Keep the bug open while the fix awaits verification and landing. PR creation and
 
 Find the PR's successful preview deployment through the repository's deployment/check metadata. Confirm it serves the **current full PR head SHA**, is reachable by QA, and will stay available for the test. Prefer a deployment-specific URL so a later push cannot silently replace the code under test. Self Healing stores the supplied SHA as a reference; it cannot attest which commit a URL serves.
 
-First read `GET /api/v1/connection/bug-verifications?bug_id=<id>&page=1` and follow `has_more`. Reuse a pending or completed run only when its `bug_id`, `pr_url`, `head_sha`, and `preview_url` match this revision. Otherwise start a run:
+First read `GET /api/v1/connection/bug-verifications?bug_id=<id>&page=1` and follow `has_more`. Reuse a pending or completed run only when its `bug_id`, `pr_url`, `head_sha`, and `preview_url` match this revision. Otherwise start a run. Call this API for **each bug the PR fixes**, using that bug’s ID and the same current PR/head/preview references:
 
 `POST /api/v1/connection/bug-verifications`:
 
@@ -60,7 +69,7 @@ First read `GET /api/v1/connection/bug-verifications?bug_id=<id>&page=1` and fol
 }
 ```
 
-This queues QA to rerun the bug's original saved reproduction against the preview. It returns `run_id`, the supplied references, and the actual QA run state. It does not return a verified verdict or mark the bug fixed. The reproduction must already exist: `409 verification_unavailable` means that QA cannot rerun this report through this endpoint.
+This associates the PR with the specified bug and queues QA to rerun that bug's original saved reproduction against the preview, supplying its report, reproduction steps, expected/actual behavior, and recording references. It works without installing or configuring the QA GitHub bot. It returns `run_id`, the supplied references, and the actual QA run state. It does not return a verified verdict or mark the bug fixed. The reproduction must already exist: `409 verification_unavailable` means that QA cannot rerun this report through this endpoint.
 
 Creation is **not idempotent**. After a timeout or transport failure, list verification runs and find the matching references before considering another POST. A request may have created work even if its response was lost. Use the factory's single worker for this bug to avoid simultaneous duplicate submissions. Save the returned `run_id` and use the GET endpoint above to follow that exact run; an empty page is not success, and `has_more` can be true even when that page contains no matching runs.
 

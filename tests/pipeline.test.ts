@@ -35,6 +35,9 @@ function fixture() {
     id: "bug-1",
     project_id: "qa-one",
     title: "Checkout fails",
+    reproduction_steps: "Submit checkout with a saved card",
+    expected_behavior: "Order confirmation appears",
+    actual_behavior: "Checkout returns an error",
     status: "open",
     severity: "high",
     discovered_at: "2026-09-29T10:00:00Z",
@@ -109,8 +112,35 @@ function fixture() {
       throw new Error(`Unexpected ${u.pathname}`);
     },
   );
+  const links = new Set<string>();
+  const fixPrs = () => ({
+    associate: async (
+      c: Connection,
+      value: { bug_id: string; pr_url: string },
+    ) => {
+      assert.equal(c.account_id, account);
+      links.add(value.pr_url);
+    },
+    augment: async <T extends { fix_prs: unknown[] }>(
+      _c: Connection,
+      bugs: T[],
+    ) =>
+      bugs.map((b) => ({
+        ...b,
+        fix_prs: [
+          ...b.fix_prs,
+          ...[...links].map((url) => ({
+            repo_full_name: "example/app",
+            pr_number: 42,
+            url,
+            state: null,
+          })),
+        ],
+      })),
+  });
   return {
-    data: pipelineData(qa, "https://qa.example"),
+    data: pipelineData(qa, "https://qa.example", fixPrs),
+    links,
     calls,
     runs,
     bug,
@@ -162,6 +192,15 @@ test("verification reruns the original journey version on the preview and retain
   assert.equal(submitted.project_id, "qa-one");
   assert.equal(submitted.journey_version_id, "jv-original");
   assert.equal(submitted.override_url, input.preview_url);
+  assert.ok(f.links.has(input.pr_url));
+  for (const value of [
+    input.bug_id,
+    f.bug.title,
+    f.bug.reproduction_steps,
+    f.bug.expected_behavior,
+    f.bug.actual_behavior,
+  ])
+    assert.ok(String(submitted.goal).includes(value));
   assert.match(
     String(submitted.goal),
     /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/,
@@ -235,6 +274,11 @@ test("foreign bugs, source runs, journeys and results never pass account scope",
     (e: HttpError) => e.status === 404,
   );
   assert.ok(!f.calls.some((c) => c.method === "PATCH"));
+  await assert.rejects(
+    f.data.associatePr(connection, input),
+    (e: HttpError) => e.status === 404,
+  );
+  assert.equal(f.links.size, 0);
   const g = fixture();
   await g.data.verify(connection, input);
   g.runs[0]!.project_id = "qa-other";
@@ -333,6 +377,24 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
     (await call("bug?bug_id=bug-1&project_id=qa-other")).status,
     400,
   );
+  for (const body of [
+    { pr_url: input.pr_url },
+    { bug_id: input.bug_id, pr_url: "https://evil.example/pull/42" },
+    { bug_id: input.bug_id, pr_url: input.pr_url, account_id: account },
+  ])
+    assert.equal((await call("bugs/fix-prs", body)).status, 400);
+  const association = { bug_id: input.bug_id, pr_url: input.pr_url };
+  assert.equal((await call("bugs/fix-prs", association, false)).status, 401);
+  for (let i = 0; i < 2; i++) {
+    const response = await call("bugs/fix-prs", association);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).fix_prs[0].url, input.pr_url);
+  }
+  assert.equal(f.links.size, 1);
+  assert.equal(
+    (await call("bug-verifications", { ...input, bug_id: undefined })).status,
+    400,
+  );
   assert.equal((await call("bug-verifications", input)).status, 201);
   const result = await call("bug-verifications?bug_id=bug-1&page=1");
   assert.equal(result.status, 200);
@@ -353,6 +415,10 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
   };
   assert.deepEqual(op.security, [{ bearerAuth: [] }]);
   assert.equal(op["x-implementation-status"], "implemented");
+  const associationOp = spec.paths["/api/v1/connection/bugs/fix-prs"]!
+    .post as typeof op;
+  assert.deepEqual(associationOp.security, [{ bearerAuth: [] }]);
+  assert.equal(associationOp["x-implementation-status"], "implemented");
 });
 
 test("OpenAPI identifies required bug IDs and the skill's operations are implemented", () => {
