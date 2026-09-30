@@ -429,20 +429,30 @@ test("overview follows QA pagination, deduplicates sessions and overlaps, and co
     const url = new URL(path, "https://qa.example"),
       p = url.searchParams;
     assert.equal(p.get("project_id"), "qa-one");
-    if (url.pathname === "/api/bugs")
+    if (url.pathname === "/api/bugs") {
+      assert.equal(p.get("status"), "all");
       return p.get("page") === "1"
         ? {
-            total: 101,
+            total: 107,
             resolvedCount: 1,
             items: Array.from({ length: 100 }, (_, i) =>
               sampleBug(String(i), i === 1 ? "reopened" : "open"),
             ),
           }
         : {
-            total: 101,
+            total: 107,
             resolvedCount: 1,
-            items: [sampleBug("old", "open", "2026-09-01T00:00:00Z")],
+            items: [
+              sampleBug("old", "open", "2026-09-01T00:00:00Z"),
+              sampleBug("fixed-1", "fixed"),
+              sampleBug("fixed-2", "fixed"),
+              sampleBug("wontfix", "wontfix"),
+              sampleBug("invalid", "invalid"),
+              sampleBug("pr-closed", "pr-closed"),
+              sampleBug("unconfirmed", "judge-rejected"),
+            ],
           };
+    }
     if (p.get("summary"))
       return {
         reviewers: [
@@ -497,7 +507,10 @@ test("overview follows QA pagination, deduplicates sessions and overlaps, and co
   const result = await dashboardData(request, now).overview(connection);
   assert.equal(result.sessions, 105);
   assert.equal(result.open_bugs, 101);
-  assert.equal(result.closed_bugs, 1);
+  assert.equal(result.closed_bugs, 5);
+  assert.equal(result.fixed_bugs, 2);
+  assert.equal(result.wontfix_bugs, 1);
+  assert.equal(result.invalid_bugs, 1);
   assert.equal(result.new_open_bugs, 100);
   assert.equal(result.days.length, 30);
   assert.deepEqual(result.days.at(-1), {

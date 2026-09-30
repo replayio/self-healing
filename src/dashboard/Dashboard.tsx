@@ -344,12 +344,6 @@ function OverviewTab() {
   const result = useData("overview", DashboardOverview);
   if (!result.data) return <LoadState {...result}>Loading overview…</LoadState>;
   const d = result.data;
-  const cards: [string, number, keyof typeof iconPaths][] = [
-    ["Open bugs", d.open_bugs, "bugs"],
-    ["Closed bugs", d.closed_bugs, "check"],
-    ["New open bugs · 24h", d.new_open_bugs, "bugs"],
-    ["Sessions", d.sessions, "sessions"],
-  ];
   return (
     <>
       <div className="dh-title-row">
@@ -365,17 +359,30 @@ function OverviewTab() {
           <Icon name="refresh" />
         </button>
       </div>
-      <div className="dh-cards">
-        {cards.map(([label, value, icon]) => (
-          <article className="dh-card" key={label}>
-            <div>
-              <span>{label}</span>
-              <Icon name={icon} />
-            </div>
-            <strong>{count(value)}</strong>
-          </article>
-        ))}
-      </div>
+      <article
+        className="dh-card dh-bug-summary"
+        aria-label="Project bug counts"
+      >
+        <div>
+          <span>Open bugs</span>
+          <Icon name="bugs" />
+        </div>
+        <strong>{count(d.open_bugs)}</strong>
+        <dl className="dh-bug-breakdown">
+          <div>
+            <dt>Fixed</dt>
+            <dd>{count(d.fixed_bugs)}</dd>
+          </div>
+          <div>
+            <dt>Wontfix</dt>
+            <dd>{count(d.wontfix_bugs)}</dd>
+          </div>
+          <div>
+            <dt>Invalid</dt>
+            <dd>{count(d.invalid_bugs)}</dd>
+          </div>
+        </dl>
+      </article>
       <SessionChart days={d.days} />
     </>
   );

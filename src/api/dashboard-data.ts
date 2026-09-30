@@ -209,33 +209,44 @@ export function dashboardData(
         serious = new Set<string>();
       const [bugCounts, , total] = await Promise.all([
         (async () => {
-          const recent = new Set<string>();
-          let open = 0,
-            closed = 0;
+          const counts = {
+            open: 0,
+            fixed: 0,
+            wontfix: 0,
+            invalid: 0,
+            closed: 0,
+            recent: 0,
+          };
+          const seen = new Set<string>();
           for (let page = 1; ; page++) {
             const result = await read(
-              BugPage.extend({ resolvedCount: Count }),
-              `${bugsPath(c)}&status=open&page=${page}`,
+              BugPage,
+              `${bugsPath(c)}&status=all&page=${page}`,
             );
-            open = result.total;
-            closed = result.resolvedCount;
             for (const item of result.items) {
-              if (
-                isOpen(item.status) &&
-                Date.parse(item.discovered_at) >= now - DAY &&
-                Date.parse(item.discovered_at) <= now
-              )
-                recent.add(item.id);
+              if (seen.has(item.id)) continue;
+              seen.add(item.id);
+              if (isOpen(item.status)) {
+                counts.open++;
+                if (
+                  Date.parse(item.discovered_at) >= now - DAY &&
+                  Date.parse(item.discovered_at) <= now
+                )
+                  counts.recent++;
+              } else if (
+                item.status === "fixed" ||
+                item.status === "wontfix" ||
+                item.status === "invalid"
+              ) {
+                counts[item.status]++;
+                counts.closed++;
+              } else if (item.status === "pr-closed") {
+                counts.closed++;
+              }
             }
-            // QA sorts by discovered_at descending. Older backlog needn't be downloaded
-            // to compute the rolling-day card; QA supplies the all-time totals.
-            if (
-              page * 100 >= result.total ||
-              result.items.some((b) => Date.parse(b.discovered_at) < now - DAY)
-            )
-              break;
+            if (page * 100 >= result.total) break;
           }
-          return { open, closed, recent: recent.size };
+          return counts;
         })(),
         (async () => {
           for (let page = 0; ; page++) {
@@ -301,6 +312,9 @@ export function dashboardData(
         name: c.name,
         sessions: total.totals.total_sessions,
         open_bugs: bugCounts.open,
+        fixed_bugs: bugCounts.fixed,
+        wontfix_bugs: bugCounts.wontfix,
+        invalid_bugs: bugCounts.invalid,
         closed_bugs: bugCounts.closed,
         new_open_bugs: bugCounts.recent,
         days,
