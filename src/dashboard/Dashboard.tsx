@@ -102,9 +102,15 @@ function initialize() {
     const ticket = new URLSearchParams(window.location.hash.slice(1)).get(
       "ticket",
     );
-    if (ticket) window.history.replaceState(null, "", "/dashboard");
     initialization = ticket
-      ? api("redeem", undefined, { ticket }).then(() => undefined)
+      ? api("redeem", undefined, { ticket }).then(() => {
+          // Keep the capability available for a retry until the cookie exchange succeeds.
+          window.history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search,
+          );
+        })
       : Promise.resolve();
   }
   return initialization;
@@ -121,7 +127,8 @@ function useData<T>(path: string, schema: z.ZodType<T>) {
     setState({ path });
     (path.startsWith("session-snapshot?")
       ? screenshotQueue(() => api(path, controller.signal), controller.signal)
-      : api(path, controller.signal))
+      : api(path, controller.signal)
+    )
       .then((value) => schema.parse(value))
       .then((data) => {
         if (!controller.signal.aborted) setState({ path, data });
@@ -1134,9 +1141,16 @@ export default function Dashboard() {
   const [ready, setReady] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
+    // A factory may replace just the fragment in an already-open iframe.
+    const newLink = () => {
+      if (new URLSearchParams(window.location.hash.slice(1)).has("ticket"))
+        window.location.reload();
+    };
+    window.addEventListener("hashchange", newLink);
     initialize()
       .then(() => setReady(true))
       .catch((e) => setError(e.message));
+    return () => window.removeEventListener("hashchange", newLink);
   }, []);
   useEffect(() => {
     const pop = () => {
@@ -1198,7 +1212,12 @@ export default function Dashboard() {
       <main className="dh-main">
         {error ? (
           <div className="dh-state" role="alert">
-            {error}
+            <p>{error}</p>
+            {!ready && window.location.hash.includes("ticket=") && (
+              <button onClick={() => window.location.reload()}>
+                Retry opening dashboard
+              </button>
+            )}
           </div>
         ) : !ready ? (
           <p className="dh-state" role="status">

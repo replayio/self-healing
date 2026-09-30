@@ -58,7 +58,7 @@ export function dashboardAuth(
       const ticket = token();
       const [row] = await query(
         `INSERT INTO dashboard_sessions(token_hash,account_id,kind,expires_at)
-        VALUES($1,$2,'launch',now()+interval '5 minutes') RETURNING expires_at`,
+        VALUES($1,$2,'launch',now()+interval '7 days') RETURNING expires_at`,
         [hash(ticket), account],
       );
       const expires = z
@@ -83,7 +83,7 @@ export function dashboardAuth(
         throw new HttpError(
           401,
           "expired_link",
-          "This dashboard link has expired. Request a new link from your factory.",
+          "This dashboard link has expired or is no longer available. Ask your factory for a new dashboard link.",
         );
       return session;
     },
