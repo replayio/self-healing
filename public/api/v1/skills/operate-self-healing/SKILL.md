@@ -37,7 +37,7 @@ The response is the updated bug. Check `status: "wontfix"` and `resolution` (the
 
 ## Write a fix PR
 
-For a valid, appropriate report, follow the target repository's development and PR instructions. Reproduce the defect, implement a focused fix, and run relevant tests. Create a draft PR while verification is pending. Explain the defect, change, and checks actually performed.
+For a valid, appropriate report, follow the target repository's development and PR instructions. Reproduce the defect, implement a focused fix, and run relevant tests. Explain the defect, change, and checks actually performed.
 
 Include a standalone `Fixes <fix_reference>` line in the PR body, substituting the exact `fix_reference` returned by Self Healing. This is QA's machine-readable bug reference; it does not require the user to open the QA project. QA can associate it automatically when the repository's QA GitHub integration is configured. Save the PR in the factory task even when that integration is absent. Do not put an account key or dashboard launch ticket in the PR.
 
@@ -70,9 +70,9 @@ Before calling the fix verified:
 - Treat `in-progress` as pending. A bug outcome needs another fix; infrastructure failure, incomplete, blocked, or cancelled runs require resolving the cause and a new verification attempt. Do not turn those states into WONTFIX.
 - Check the PR's current head again. A new push requires a new preview and verification for that SHA. Never reuse an older run as evidence for changed code. Include the SHA, preview, run ID, outcome, and observed behavior in the PR's verification notes.
 
-If there is no preview, the preview is inaccessible, or the original reproduction is unavailable, run the local/regression checks that are possible and state precisely what QA/preview verification remains unavailable. Document the alternative evidence and follow the repository’s readiness policy. If the remaining gap prevents establishing that the fix works, keep the PR draft and ask for help with that specific blocker. Do not claim QA verification that did not happen.
+If there is no preview, the preview is inaccessible, or the original reproduction is unavailable, run the local/regression checks that are possible and state precisely what QA/preview verification remains unavailable. Document the alternative evidence and follow the repository’s readiness policy. If the remaining gap prevents establishing that the fix works, report that specific blocker. Do not claim QA verification that did not happen.
 
-Once the current revision's tests and available QA/preview checks pass with adequate coverage, mark the PR ready for review and report it to the user. Landing follows the repository's existing merge policy and user authorization. Do not auto-merge merely because the periodic task ran. Keep tracking the PR after handoff; a rejected, changed, or closed-unmerged PR may leave the bug needing work. Record merged PRs in the factory task and check the deployed behavior before taking further action. An open QA bug alone is not a reason to create another PR for an already-landed fix. This API does not mark a bug fixed on PR creation or a preview pass.
+Follow the target repository's policies and the user's instructions for PR readiness, review, and merging. Report verification results and PR status to the user. Keep tracking the PR after handoff; a rejected, changed, or closed-unmerged PR may leave the bug needing work. Record merged PRs in the factory task and check the deployed behavior before taking further action. An open QA bug alone is not a reason to create another PR for an already-landed fix. This API does not mark a bug fixed on PR creation or a preview pass.
 
 ## Other operations and failures
 
