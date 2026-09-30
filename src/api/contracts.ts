@@ -488,6 +488,15 @@ export const DashboardBug = z.object({
     }),
   ),
 });
+export const DashboardEvidence = z.object({
+  tool: z.string(),
+  params: z.record(z.unknown()).optional(),
+  result: z.string().nullish(),
+});
+const DashboardAnalysisSection = z.object({
+  text: z.string(),
+  evidence: z.array(DashboardEvidence).optional(),
+});
 export const DashboardBugDetail = DashboardBug.extend({
   description: z.string().nullable(),
   reproduction_steps: z.string().nullable(),
@@ -498,12 +507,13 @@ export const DashboardBugDetail = DashboardBug.extend({
   analysis: z
     .object({
       impact: z.string().nullish(),
-      root_cause: z.object({ text: z.string() }).nullish(),
-      chain: z.array(z.object({ text: z.string() })).optional(),
+      root_cause: DashboardAnalysisSection.nullish(),
+      chain: z.array(DashboardAnalysisSection).optional(),
       chronology: z
         .array(
           z.object({
             text: z.string().optional(),
+            evidence: z.array(DashboardEvidence).optional(),
             screenshot_url: HttpsUrl.nullable().optional(),
           }),
         )

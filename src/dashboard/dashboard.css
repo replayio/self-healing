@@ -489,3 +489,70 @@
   text-decoration: none;
   color: var(--text);
 }
+
+/* QA evidence cards keep tool params and results behind compact disclosure rows. */
+.dh-evidence {
+  margin: 12px 0;
+  white-space: normal;
+}
+.dh-evidence-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.dh-evidence-label > span {
+  margin-left: 6px;
+  border: 1px solid var(--border);
+  padding: 0 5px;
+  border-radius: 4px;
+}
+.dh-evidence-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.dh-app .dh-evidence-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 12px;
+  background: var(--canvas);
+}
+.dh-evidence-tool {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.dh-evidence-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dh-evidence-chevron {
+  margin-left: auto;
+  display: flex;
+  flex-shrink: 0;
+}
+.dh-evidence-chevron.open {
+  transform: rotate(90deg);
+}
+.dh-evidence-body {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+.dh-evidence-body pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 6px 0 14px;
+}
+.dh-evidence-body pre:last-child {
+  margin-bottom: 0;
+}

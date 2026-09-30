@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   DashboardBug,
+  DashboardEvidence,
   DashboardBugDetail,
   DashboardBugs,
   DashboardOverview,
@@ -44,9 +45,7 @@ const Analysis = DashboardBugDetail.shape.analysis
         z.object({
           text: z.string().optional(),
           screenshot_url: z.string().nullish(),
-          evidence: z
-            .array(z.object({ tool: z.string(), result: z.string().nullish() }))
-            .optional(),
+          evidence: z.array(DashboardEvidence).optional(),
         }),
       )
       .optional(),
@@ -349,6 +348,7 @@ export function dashboardData(
               ...b.analysis,
               chronology: b.analysis.chronology?.map((step) => ({
                 text: step.text,
+                evidence: step.evidence,
                 screenshot_url: screenshot(step),
               })),
             }

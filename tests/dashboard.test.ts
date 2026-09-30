@@ -629,9 +629,23 @@ test("bug detail checks project ownership and returns report content without pro
     analysis: {
       root_cause: {
         text: "Root cause",
-        evidence: [{ params: { token: "private" } }],
+        evidence: [
+          {
+            tool: "ReadSource",
+            params: { path: "src/checkout.ts" },
+            result: "Source evidence",
+          },
+        ],
       },
-      chain: [{ text: "Cause", secret: "private" }],
+      chain: [
+        {
+          text: "Cause",
+          secret: "private",
+          evidence: [
+            { tool: "Evaluate", params: { expression: "total" }, result: "0" },
+          ],
+        },
+      ],
       chronology: [
         {
           text: "Click",
@@ -640,7 +654,7 @@ test("bug detail checks project ownership and returns report content without pro
               tool: "Screenshot",
               result:
                 "https://static.replay.io/recordings/recording/analysis/screenshot-100.jpg",
-              params: { token: "private" },
+              params: { time: 100 },
             },
           ],
         },
@@ -654,6 +668,18 @@ test("bug detail checks project ownership and returns report content without pro
   const result = await data.bug(connection, "bug-1");
   assert.equal(result.description, "Description");
   assert.equal(result.analysis?.root_cause?.text, "Root cause");
+  assert.deepEqual(
+    result.analysis?.root_cause?.evidence,
+    raw.analysis.root_cause.evidence,
+  );
+  assert.deepEqual(
+    result.analysis?.chain?.[0]?.evidence,
+    raw.analysis.chain[0]!.evidence,
+  );
+  assert.deepEqual(
+    result.analysis?.chronology?.[0]?.evidence,
+    raw.analysis.chronology[0]!.evidence,
+  );
   assert.equal(
     result.analysis?.chronology?.[0]?.screenshot_url,
     "https://static.replay.io/recordings/recording/analysis/screenshot-100.jpg",

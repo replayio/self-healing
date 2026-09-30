@@ -5,6 +5,7 @@ import {
   DashboardDay,
   DashboardBugs,
   DashboardBugDetail,
+  DashboardEvidence,
   DashboardReports,
   DashboardSessions,
   DashboardSessionDetail,
@@ -382,6 +383,108 @@ function FixPRs({ bug }: { bug: Bug }) {
     <>—</>
   );
 }
+const evidenceLabels: Record<string, string> = {
+  readsource: "Source",
+  code_search: "Code search",
+  logpoint: "Logpoint",
+  evaluate: "Evaluate",
+  screenshot: "Screenshot",
+  describescreenshot: "Screenshot",
+  consolemessages: "Console",
+  networkrequest: "Network",
+  network_replay: "Network",
+  userinteractions: "User interactions",
+  inspectelement: "Inspect element",
+  git_blame: "Git blame",
+  feature_flag_audit: "Feature flags",
+  schema_diff: "Schema diff",
+  provideddata: "Provided data",
+};
+export function EvidenceCards({
+  items,
+}: {
+  items?: z.infer<typeof DashboardEvidence>[];
+}) {
+  const [expanded, setExpanded] = useState<number | null>(null);
+  if (!items?.length) return null;
+  return (
+    <div className="dh-evidence">
+      <div className="dh-evidence-label">
+        Evidence <span>{items.length}</span>
+      </div>
+      {items.map((item, index) => {
+        const words = item.tool
+          .replace(/[_-]+/g, " ")
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .toLowerCase();
+        const label =
+          evidenceLabels[item.tool.trim().toLowerCase()] ??
+          (words.charAt(0).toUpperCase() + words.slice(1) || "Evidence");
+        const scalars = Object.entries(item.params ?? {}).filter(
+          ([key, value]) =>
+            !["recordingId", "recording_id"].includes(key) &&
+            ["string", "number"].includes(typeof value),
+        );
+        const preferred =
+          [
+            "url",
+            "path",
+            "file",
+            "filename",
+            "source",
+            "query",
+            "pattern",
+            "expression",
+            "selector",
+            "text",
+            "message",
+            "name",
+          ]
+            .map((key) => scalars.find(([name]) => name.toLowerCase() === key))
+            .find(Boolean) ?? scalars[0];
+        const preview = preferred
+          ? String(preferred[1]).replace(/\s+/g, " ").trim()
+          : "";
+        const open = expanded === index;
+        return (
+          <div className="dh-evidence-card" key={index}>
+            <button
+              className="dh-evidence-toggle"
+              aria-expanded={open}
+              onClick={() => setExpanded(open ? null : index)}
+            >
+              <span className="dh-evidence-tool" title={item.tool}>
+                {label}
+              </span>
+              <span className="dh-evidence-preview">
+                {preview.length > 90 ? preview.slice(0, 89) + "…" : preview}
+              </span>
+              <span
+                className={
+                  open ? "dh-evidence-chevron open" : "dh-evidence-chevron"
+                }
+              >
+                <Icon name="right" />
+              </span>
+            </button>
+            {open && (
+              <div className="dh-evidence-body">
+                <div className="dh-evidence-label">{item.tool} · params</div>
+                <pre>{JSON.stringify(item.params ?? {}, null, 2)}</pre>
+                {item.result != null && (
+                  <>
+                    <div className="dh-evidence-label">Result</div>
+                    <pre>{item.result}</pre>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 export function BugReport({
   bug,
 }: {
@@ -419,6 +522,9 @@ export function BugReport({
             <section key={label}>
               <h2>{label}</h2>
               <p className="dh-prose">{value}</p>
+              {label === "Root cause" && (
+                <EvidenceCards items={bug.analysis?.root_cause?.evidence} />
+              )}
             </section>
           ) : null,
         )}
@@ -429,6 +535,7 @@ export function BugReport({
               {bug.analysis.chronology.map((step, i) => (
                 <li className="dh-prose" key={i}>
                   {step.text}
+                  <EvidenceCards items={step.evidence} />
                   {step.screenshot_url && (
                     <a
                       href={step.screenshot_url}
@@ -456,6 +563,7 @@ export function BugReport({
               {bug.analysis.chain.map((step, i) => (
                 <li className="dh-prose" key={i}>
                   {step.text}
+                  <EvidenceCards items={step.evidence} />
                 </li>
               ))}
             </ol>
