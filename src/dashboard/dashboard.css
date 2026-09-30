@@ -551,3 +551,17 @@
 .dh-evidence-body pre:last-child {
   margin-bottom: 0;
 }
+
+.dh-error-details {
+  margin: 20px auto;
+  max-width: 560px;
+  text-align: left;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.dh-error-details summary {
+  cursor: pointer;
+  color: var(--text);
+}

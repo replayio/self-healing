@@ -269,8 +269,26 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
     assert.equal(malformed.status, 400);
     assert.match(
       (await malformed.json()).error.message,
-      /incomplete or malformed/,
+      /9 characters; it must contain exactly 64/,
     );
+    for (const [ticket, expected] of [
+      ["z".repeat(64), /characters it cannot accept/],
+      [undefined, /No dashboard access code/],
+      ["a".repeat(63), /63 characters/],
+    ] as const) {
+      const response = await call("/api/v1/dashboard/redeem", {
+        method: "POST",
+        body: { ticket },
+        origin,
+      });
+      const result = await response.json();
+      assert.equal(response.status, 400);
+      assert.equal(result.error.code, "invalid_dashboard_link");
+      assert.match(result.error.message, expected);
+      assert.ok(result.error.request_id);
+      assert.ok(!result.error.message.startsWith("ticket:"));
+      if (ticket) assert.ok(!result.error.message.includes(ticket));
+    }
     const redeemed = await call("/api/v1/dashboard/redeem", {
       method: "POST",
       body: { ticket },
