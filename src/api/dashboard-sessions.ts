@@ -8,12 +8,13 @@ import { HttpError } from "./errors.ts";
 import type { qaClient } from "./qa.ts";
 import type { Connection } from "./connections.ts";
 import { normalizeSessionUrl } from "./sessions.ts";
+import { sessionSightmap } from "./session-sightmap.ts";
 
-const unavailable = () =>
+const unavailable = (operation = "request", detail = "Try again.") =>
   new HttpError(
     503,
     "subtext_unavailable",
-    "Subtext session data is not available yet. Retry shortly.",
+    `Subtext ${operation} failed. ${detail}`,
   );
 const Content = z.object({
   content: z
@@ -73,6 +74,7 @@ export function dashboardSessions(
     }
   }
   async function review<T>(
+    c: Connection,
     url: string,
     operation: (
       call: (
@@ -83,6 +85,8 @@ export function dashboardSessions(
       opened: string,
     ) => Promise<T>,
   ) {
+    const context = await sessionSightmap(qa, c.qa_project_id!);
+    let stage = "connection";
     let mcp: string | undefined;
     let seq = 0;
     const signal = AbortSignal.timeout(24000);
@@ -108,7 +112,13 @@ export function dashboardSessions(
           ...(params ? { params } : {}),
         }),
       });
-      if (!response.ok) throw unavailable();
+      if (!response.ok)
+        throw unavailable(
+          stage,
+          response.status === 429
+            ? "Too many requests; retry shortly."
+            : `Provider returned HTTP ${response.status}. Try again.`,
+        );
       mcp = response.headers.get("mcp-session-id") ?? mcp;
       if (notification || response.status === 202) {
         await response.body?.cancel();
@@ -125,7 +135,7 @@ export function dashboardSessions(
             size += value.length;
             if (size > 4_000_000) {
               await reader.cancel();
-              throw unavailable();
+              throw unavailable(stage, "The response exceeded the size limit.");
             }
             chunks.push(value);
           }
@@ -147,7 +157,7 @@ export function dashboardSessions(
           error: z.unknown().optional(),
         })
         .parse(JSON.parse(json));
-      if (envelope.error) throw unavailable();
+      if (envelope.error) throw unavailable(stage);
       return envelope.result;
     }
     let client: string | undefined;
@@ -168,8 +178,13 @@ export function dashboardSessions(
         .object({ tools: z.array(Tool) })
         .parse(await rpc("tools/list")).tools;
       call = async (name, candidates) => {
+        stage = name;
         const tool = tools.find((t) => t.name === name);
-        if (!tool) throw unavailable();
+        if (!tool)
+          throw unavailable(
+            stage,
+            "The provider does not support this operation.",
+          );
         const properties = tool.inputSchema?.properties;
         const args = Object.fromEntries(
           Object.entries(candidates).filter(
@@ -179,21 +194,33 @@ export function dashboardSessions(
         const result = Content.parse(
           await rpc("tools/call", { name, arguments: args }),
         );
-        if (result.isError) throw unavailable();
+        if (result.isError) throw unavailable(stage);
         return result;
       };
       const opened = (
-        await call("review-open", { url, session_url: url, sessionUrl: url })
+        await call("review-open", {
+          url,
+          session_url: url,
+          sessionUrl: url,
+          ...context,
+        })
       ).content
         .map((c) => c.text ?? "")
         .join("\n");
       client = opened.match(
         /(?:client[_ ]?id|client)\s*[:=]\s*[`"']?([\w-]+)/i,
       )?.[1];
-      if (!client) throw unavailable();
+      if (!client)
+        throw unavailable(stage, "The provider returned no review client.");
       return await operation(call, client, opened);
-    } catch {
-      throw unavailable();
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw unavailable(
+        stage,
+        signal.aborted
+          ? "The request timed out. Try again."
+          : "The provider returned an unreadable response. Try again.",
+      );
     } finally {
       if (client && call)
         await call("review-close", {
@@ -216,6 +243,7 @@ export function dashboardSessions(
     async session(c: Connection, id: string) {
       const session = await owned(c, id);
       return review(
+        c,
         normalizeSessionUrl(session.session_url),
         async (call, client, opened) => {
           // Ask for every kind in the session map, just as QA does; keep full text as well as timeline rows.
@@ -246,7 +274,12 @@ export function dashboardSessions(
               /^\s*(\d+)ms\s+((?:page-load|click|change|input|paste|scroll|keydown|keyup|keypress|hover)\b.*)$/i,
             );
             return match
-              ? [{ timestamp: Number(match[1]), text: match[2]! }]
+              ? [
+                  {
+                    timestamp: Number(match[1]),
+                    text: match[2]!.replaceAll("^", " "),
+                  },
+                ]
               : [];
           });
           return DashboardSessionDetail.parse({
@@ -260,6 +293,7 @@ export function dashboardSessions(
     async snapshot(c: Connection, id: string, timestamp: number) {
       const session = await owned(c, id);
       return review(
+        c,
         normalizeSessionUrl(session.session_url),
         async (call, client) => {
           const result = await call("review-snapshot", {
@@ -267,15 +301,10 @@ export function dashboardSessions(
             clientId: client,
             timestamp,
             time: timestamp,
-            lens: "full",
-            include: ["tree", "image"],
-            tree: true,
+            include: ["image"],
           });
           return DashboardSessionSnapshot.parse({
-            tree: result.content
-              .map((c) => c.text ?? "")
-              .filter(Boolean)
-              .join("\n"),
+            tree: "",
             images: result.content
               .filter(
                 (c) =>
