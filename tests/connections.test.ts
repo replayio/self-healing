@@ -18,6 +18,7 @@ async function fixture() {
     "002_connections.sql",
     "003_session_coordination.sql",
     "004_accounts.sql",
+    "006_connection_exploration.sql",
   ])
     await db.exec(
       await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"),
@@ -558,6 +559,175 @@ test("package producer metadata passes HTTP validation and is forwarded unchange
       ].schema.properties.auxiliary_data.items.properties.key.enum.includes(
         "capture-producer",
       ),
+    );
+  } finally {
+    await f.db.close();
+  }
+});
+
+test("base-site exploration defaults off, explicit opt-in persists, and session processing stays enabled", async () => {
+  for (const choice of [undefined, false, true]) {
+    const f = await fixture();
+    try {
+      const input = {
+        ...settings,
+        ...(choice === undefined ? {} : { start_exploration: choice }),
+      };
+      const connected = await f.service.connect(
+        f.account,
+        "customer-key",
+        input,
+      );
+      assert.equal(connected.start_exploration, choice ?? false);
+      const created = f.calls.find((c) => c.path === "/api/v1/projects")!
+        .body as Record<string, unknown>;
+      assert.equal(created.start_exploration, choice ?? false);
+      assert.ok(!("status" in created), "do not pause session processing");
+      const reviewers = f.calls.filter(
+        (c) =>
+          c.path.includes("project-session-reviewers") && c.body !== undefined,
+      );
+      assert.equal(reviewers.length, 2);
+      for (const c of reviewers)
+        assert.equal(
+          (c.body as { settings: { enabled: boolean } }).settings.enabled,
+          true,
+        );
+      assert.ok(
+        f.calls.some(
+          (c) => c.path.includes("summarizers") && c.body !== undefined,
+        ),
+      );
+      const retried = await f.service.connect(
+        f.account,
+        "customer-key",
+        settings,
+      );
+      assert.equal(retried.start_exploration, choice ?? false);
+      assert.equal(f.projects.length, 1);
+      const before = f.calls.length;
+      await assert.rejects(
+        f.service.connect(f.account, "customer-key", {
+          ...settings,
+          start_exploration: !(choice ?? false),
+        }),
+        /different project settings/,
+      );
+      assert.equal(f.calls.length, before);
+    } finally {
+      await f.db.close();
+    }
+  }
+});
+
+test("exploration opt-in survives an uncertain project creation response", async () => {
+  const f = await fixture();
+  try {
+    f.loseCreate();
+    await assert.rejects(
+      f.service.connect(f.account, "customer-key", {
+        ...settings,
+        start_exploration: true,
+      }),
+    );
+    assert.equal(
+      (await f.service.connect(f.account, "customer-key", settings))
+        .start_exploration,
+      true,
+    );
+    assert.equal(f.projects.length, 1);
+    assert.equal(
+      (
+        f.calls.find((c) => c.path === "/api/v1/projects")!.body as {
+          start_exploration: boolean;
+        }
+      ).start_exploration,
+      true,
+    );
+  } finally {
+    await f.db.close();
+  }
+});
+
+test("HTTP connection validates and returns the saved exploration choice", async () => {
+  const f = await fixture();
+  try {
+    const handler = createHandler({
+      authenticate: async () => ({ accountId: f.account }),
+      connections: () => f.service,
+      accounts: () => ({
+        credentials: async () => ({
+          subtextKey: "customer-key",
+          qaToken: "qa-token",
+        }),
+        authenticate: async () => ({ accountId: f.account }),
+        provisionAccount: async () => {
+          throw new Error("unused");
+        },
+      }),
+    });
+    const call = (body?: unknown) =>
+      handler(
+        new Request("https://healing.example/api/v1/connection", {
+          method: body ? "POST" : "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer account",
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        }),
+      );
+    assert.equal(
+      (await call({ ...settings, start_exploration: "false" })).status,
+      400,
+    );
+    assert.equal(f.projects.length, 0);
+    const created = await call({ ...settings, start_exploration: true });
+    assert.equal(created.status, 200);
+    assert.equal((await created.json()).start_exploration, true);
+    assert.equal((await (await call()).json()).start_exploration, true);
+    assert.equal(
+      (await call({ ...settings, start_exploration: false })).status,
+      409,
+    );
+  } finally {
+    await f.db.close();
+  }
+});
+
+test("migration preserves existing connections and can be reapplied", async () => {
+  const f = await fixture();
+  try {
+    await f.db.exec("ALTER TABLE connections DROP COLUMN start_exploration");
+    await f.query(
+      "INSERT INTO connections(id,account_id,encrypted_key,name,production_url) VALUES($1,$2,$3,$4,$5)",
+      [
+        "11111111-1111-4111-8111-111111111111",
+        f.account,
+        "encrypted",
+        settings.name,
+        settings.production_url,
+      ],
+    );
+    const migration = await readFile(
+      new URL("../migrations/006_connection_exploration.sql", import.meta.url),
+      "utf8",
+    );
+    await f.db.exec(migration);
+    await f.db.exec(migration);
+    assert.equal((await f.service.get(f.account)).start_exploration, true);
+    assert.equal(
+      (await f.service.connect(f.account, "customer-key", settings))
+        .start_exploration,
+      true,
+    );
+    assert.equal(
+      (
+        f.calls.find((c) => c.path === "/api/v1/projects")!.body as {
+          start_exploration: boolean;
+        }
+      ).start_exploration,
+      true,
     );
   } finally {
     await f.db.close();

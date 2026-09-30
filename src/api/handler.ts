@@ -314,7 +314,11 @@ export function createHandler(
             await service.connect(
               account,
               key,
-              body as { name: string; production_url: string },
+              body as {
+                name: string;
+                production_url: string;
+                start_exploration?: boolean;
+              },
             ),
           );
         }
@@ -323,6 +327,7 @@ export function createHandler(
           return json({
             id: row.id,
             qa_project_id: row.qa_project_id,
+            start_exploration: row.start_exploration,
             status: row.ready ? "connected" : "pending",
           });
         }

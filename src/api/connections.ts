@@ -20,6 +20,7 @@ const Row = z.object({
   encrypted_ingest_token: z.string().nullable(),
   create_attempted: z.boolean(),
   ready: z.boolean(),
+  start_exploration: z.boolean(),
   created_at: z.coerce.date(),
   reporting_start_day: z.coerce.date().nullable(),
 });
@@ -41,6 +42,7 @@ export function connectionService(
     return Row.parse(row);
   };
   const result = (c: Connection) => ({
+    start_exploration: c.start_exploration,
     id: c.id,
     qa_project_id: c.qa_project_id,
     status: c.ready ? ("connected" as const) : ("pending" as const),
@@ -53,10 +55,14 @@ export function connectionService(
     async connect(
       account: string,
       key: string,
-      input: { name: string; production_url: string },
+      input: {
+        name: string;
+        production_url: string;
+        start_exploration?: boolean;
+      },
     ) {
       await query(
-        `INSERT INTO connections(id, account_id, encrypted_key, name, production_url) VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO connections(id, account_id, encrypted_key, name, production_url, start_exploration) VALUES ($1,$2,$3,$4,$5,$6)
         ON CONFLICT(account_id) DO NOTHING`,
         [
           randomUUID(),
@@ -64,10 +70,16 @@ export function connectionService(
           vault.encrypt(key, vault.identity(key)),
           input.name,
           input.production_url,
+          input.start_exploration ?? false,
         ],
       );
       let c = await get(account);
-      if (c.name !== input.name || c.production_url !== input.production_url)
+      if (
+        c.name !== input.name ||
+        c.production_url !== input.production_url ||
+        (input.start_exploration !== undefined &&
+          c.start_exploration !== input.start_exploration)
+      )
         throw new HttpError(
           409,
           "already_connected",
@@ -131,6 +143,7 @@ export function connectionService(
               await qa("/api/v1/projects", {
                 name,
                 target_url: c.production_url,
+                start_exploration: c.start_exploration,
                 budget: 20,
                 instructions:
                   "Test this application and reproduce user problems from submitted sessions.",

@@ -26,6 +26,7 @@ const connection = {
   create_attempted: true,
   created_at: new Date(),
   reporting_start_day: new Date(),
+  start_exploration: false,
 } satisfies Connection;
 async function fixture() {
   const db = new PGlite();
@@ -77,10 +78,7 @@ test("dashboard links open independent browser sessions without consumption or e
       "SELECT expires_at FROM dashboard_sessions WHERE kind='launch'",
       [],
     );
-    assert.equal(
-      (launch!.expires_at as Date).toISOString(),
-      link.expires_at,
-    );
+    assert.equal((launch!.expires_at as Date).toISOString(), link.expires_at);
     await f.auth.logout(cookieRequest(second));
     await assert.rejects(f.auth.authenticate(cookieRequest(second)), HttpError);
     await assert.rejects(f.auth.redeem(token), HttpError);

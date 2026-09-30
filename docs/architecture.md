@@ -70,3 +70,9 @@ The operating skill uses account-key-only connection APIs to list/read bugs, rec
 Verification metadata (bug, PR, head SHA and preview URL) lives in the durable QA run goal. Self Healing adds no recording store or verification table. Run outcomes and recording references are projected from QA, never manufactured. The supplied head SHA is a factory assertion; the factory must verify the deployment's commit and inspect actual reproduction coverage. There is no setter for a verified verdict. Creation is not idempotent; after uncertain writes the factory must reconcile paginated runs before retrying. A bug without an available original journey is explicitly unverifiable through this endpoint.
 
 The factory schedules polling (suggested every 15 minutes), coordinates one worker per bug, tracks PRs and verification run IDs, and follows the repository's merge policy. This does not implement the legacy claim/event/managed-fix contracts.
+
+## Optional initial site QA
+
+Connection creation stores `start_exploration` and forwards it to QA’s project-creation API. New connections default to false; an explicit true opts into initial exploration and smoke-test runs. Session ingestion, reviews, reports and session-driven reproductions remain active in either case. The option is creation-time configuration, not a project pause or restriction on explicitly requested work.
+
+Migration `006_connection_exploration.sql` adds one boolean to existing connection metadata. Existing connections retain true to reflect the old provisioning behavior. Retries with an omitted choice preserve the saved value; an explicitly different choice returns 409 before provider work. Lost creation responses reconcile the original project instead of creating another. Deploy QA’s `start_exploration` support before this Self Healing version; an older QA deployment may ignore the field. No new secrets are required.

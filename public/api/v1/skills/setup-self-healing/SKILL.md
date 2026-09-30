@@ -5,7 +5,7 @@ description: Guide a coding agent through account provisioning, project connecti
 
 # Set up Self Healing for this project
 
-Use this skill when the user asks to enable Self Healing in an application. Do the integration work in the current project; ask the user only for missing credentials, deployment access, or choices you cannot infer. A user pasting the setup prompt is asking you to perform setup, not just explain the API.
+Use this skill when the user asks to enable Self Healing in an application. Do the integration work in the current project; ask the user for missing credentials, deployment access, choices you cannot infer, and the optional site-QA choice below. A user pasting the setup prompt is asking you to perform setup, not just explain the API.
 
 ## Discover the service and inspect the project
 
@@ -14,6 +14,16 @@ Use the origin from which you downloaded this skill as `SELF_HEALING_URL`. Resol
 Inspect the project's framework, server routes, deployment configuration, secret manager, and existing Fullstory/capture integration. Reuse existing instrumentation rather than installing a second copy. Identify the production HTTPS URL and a readable project name. Locate any existing `SELF_HEALING_API_KEY` in its secret manager without printing its value. Do not create a new account when an existing working one is available.
 
 Initial setup supports session ingestion, QA reviews, reproduction journeys requested by friction reviews, and daily behavior reports. Providing a key does not discover historical sessions or install browser capture. Automatic fix-PR orchestration, event streams, and other routes marked `planned` are not implemented; do not present saved configuration or a 501 response as working functionality.
+
+## Ask whether to configure site QA
+
+For now, running QA on the site is an optional part of setup. Ask the user: **“Would you like to configure QA testing for this site now, or skip it for now?”** Do not infer consent from the general request to set up Self Healing.
+
+If they decline or defer, finish the session-capture, reporting, and dashboard setup with `start_exploration: false` when creating the connection. Do not start a base-site exploration or schedule additional site testing. Say that optional QA configuration was skipped and can be added later. Do not make it a setup blocker or keep asking during the same setup.
+
+This choice controls initial base-site exploration and smoke-test runs. Session capture, session analysis, reports, and session-driven reproduction journeys stay enabled. Skipping base-site QA does not disable the self-healing bug/fix pipeline.
+
+If they opt in, set `start_exploration: true` when creating the connection. Setup acceptance remains delivery of real session inputs; do not wait for the first bug or report to complete setup.
 
 ## Provision and store the account key
 
@@ -33,15 +43,15 @@ Repeating provisioning with the same valid Subtext key recovers the same account
 
 ## Connect the application
 
-GET `/api/v1/connection` using the account key. If it is connected, reuse its IDs. If it returns `not_connected`, POST the same path with:
+GET `/api/v1/connection` using the account key. If it is connected, reuse its IDs and saved `start_exploration` value. This is a creation-time choice, not a switch to stop or restart existing QA work. A different value on an existing connection returns 409; do not create a replacement account to change it. If it returns `not_connected`, POST the same path with:
 
 ```json
-{"name":"My application","production_url":"https://app.example.com"}
+{"name":"My application","production_url":"https://app.example.com","start_exploration":false}
 ```
 
-Recover interrupted setup by repeating that exact POST. Save the chosen name and URL in project configuration so retries use identical values. The connection creates one QA project for the account and configures reviews and daily reports. Different settings return 409; do not create a replacement account to bypass this conflict. The older `/api/v1/projects` configuration API is not a substitute for connection provisioning.
+Set `start_exploration` to the user’s choice: `false` to skip initial base-site QA, `true` to run it. Omission defaults to `false` for a new connection. Recover interrupted setup by repeating that exact POST. Save the chosen name, URL, and `start_exploration` value in project configuration so retries use identical values. The connection creates one QA project for the account and configures reviews and daily reports. Different settings return 409; do not create a replacement account to bypass this conflict. The older `/api/v1/projects` configuration API is not a substitute for connection provisioning.
 
-A connected response confirms configuration; verify session delivery after installing capture. QA project creation can start initial exploration, and QA work requires credit capacity. Report quota or credit blocks to the user/service operator; do not promise free or unlimited work.
+A connected response confirms configuration; verify session delivery after installing capture. QA project creation starts initial exploration and smoke-test runs only when `start_exploration` is true. QA work requires credit capacity. Report quota or credit blocks to the user/service operator; do not promise free or unlimited work.
 
 ## Choose where daily reports should go
 
@@ -149,18 +159,14 @@ Setup is complete when the deployed application's real session captures are succ
 1. Run the target project's relevant tests/build and deploy using its normal workflow and permissions. If deployment requires user action, report that boundary and provide the concrete change for review.
 2. Exercise a real session in the deployed application: make a fetch request, click or enter input, and exercise the existing identity hook if the app has one. Verify that the installed package uploads the resulting session URL and captured artifacts through the application's forwarding route. FullStory recording alone or a hand-crafted metadata-only upload does not verify this path.
 3. Confirm that the forwarding route receives Self Healing's successful response from `POST /api/v1/connection/sessions`: HTTP 200 with `status: "stored"` and a nonempty `session_id`. The route must pass that response back to the package. Verify the uploads containing the exercised network and interaction events succeed, rather than checking only an initial metadata batch. Check that the account key stays server-side and the route uses the app's intended access controls.
-4. Report the deployed integration, the test session URL, Self Healing's returned session ID and ingestion status, and the configured report destination (or whether it was declined or still needs user input). If delivery fails, report the failed request's status/error and fix the capture or forwarding problem before declaring setup complete. Never include API keys or secret callback URLs.
+4. Report the deployed integration, the test session URL, Self Healing's returned session ID and ingestion status, the configured report destination (or whether it was declined or still needs user input), and whether the user chose to configure site QA or skip it. If delivery fails, report the failed request's status/error and fix the capture or forwarding problem before declaring setup complete. Never include API keys or secret callback URLs.
 
 Once delivery is verified, declare setup complete and open the dashboard for the user as described below. Do not wait for the session to go quiet, poll QA reviewers, or wait for a daily report. Do not schedule those checks as setup follow-ups or hold the setup handoff for them. Continue forwarding capture batches normally; no completion request or recording shutdown is needed.
 
-For separately requested ongoing operation, read `/api/v1/skills/operate-self-healing/SKILL.md`. On 401, check which credential is being used and do not fall back to Subtext bearer authentication. On 429 retry with backoff. On 503 or `provisioning_pending`, preserve IDs and report the operator action needed. On 501, stop that unsupported operation; never invent a replacement provider API.
+For ongoing self-healing bug triage and fixes, read `/api/v1/skills/operate-self-healing/SKILL.md`. On 401, check which credential is being used and do not fall back to Subtext bearer authentication. On 429 retry with backoff. On 503 or `provisioning_pending`, preserve IDs and report the operator action needed. On 501, stop that unsupported operation; never invent a replacement provider API.
 
 ## Open the dashboard
 
 When setup is complete, call `POST /api/v1/dashboard-sessions` with the server-side account key and open the returned `url` for the user in the most appropriate way available. If you cannot open it directly, provide a clickable **Open dashboard** link. Generate a fresh link for the handoff; if it expires before the user opens it, request another. Keep the account key server-side.
 
 The dashboard has Overview, Bugs, and Reports tabs. Overview shows bug counts and daily session activity; Bugs shows kinds, fix PRs, and bug reports within Self Healing; Reports lets the user cycle through daily reports. No separate signup or QA project access is needed.
-
-## Run the ongoing pipeline
-
-After setup, follow [operate-self-healing](../operate-self-healing/SKILL.md) to arrange periodic bug triage (suggested every 15 minutes), record WONTFIX reasons for unsuitable reports, create fix PRs, and verify them against previews with QA. Setup acceptance remains delivery of real session inputs; do not wait for the first bug or report to complete setup.
