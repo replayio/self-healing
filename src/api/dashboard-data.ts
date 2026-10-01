@@ -7,6 +7,8 @@ import {
   DashboardBugs,
   DashboardOverview,
   DashboardReports,
+  QABugAggregates,
+  QASessionAggregates,
 } from "./contracts.ts";
 import { HttpError, validationDiagnostics } from "./errors.ts";
 import { qaClient, QARequestError } from "./qa.ts";
@@ -72,35 +74,6 @@ function screenshot(
     : null;
 }
 const BugPage = z.object({ items: z.array(Bug), total: Count });
-const SessionPage = z.object({
-  sessions: z.array(
-    z.object({ session_id: z.string(), first_received_at: DateString }),
-  ),
-  has_more: z.boolean(),
-});
-const ReviewPage = z.object({
-  totals: z.object({ total_sessions: Count }),
-  deleted_codes: z.array(z.string()),
-  runs: z.array(
-    z.object({
-      session_id: z.string(),
-      output: z
-        .object({
-          observations: z.array(
-            z.object({ code: z.string(), attributes: z.record(z.unknown()) }),
-          ),
-        })
-        .nullable(),
-      context: z.object({
-        bugs: z.array(z.object({ id: z.string(), status: z.string() })),
-      }),
-    }),
-  ),
-  has_more: z.boolean(),
-});
-const ReviewerList = z.object({
-  reviewers: z.array(z.object({ key: z.string() })),
-});
 const History = z.object({
   older: z.string().nullable(),
   newer: z.string().nullable(),
@@ -211,144 +184,106 @@ export function dashboardData(
         state: pr.merged_at ? "merged" : (pr.pr_state ?? null),
       })),
     });
-  const reviewerPath = (c: Connection) =>
-    `/api/project-session-reviewers?project_id=${encodeURIComponent(c.qa_project_id!)}`;
   const bugsPath = (c: Connection) =>
     `/api/bugs?project_id=${encodeURIComponent(c.qa_project_id!)}&pageSize=100`;
   return {
     async overview(c: Connection) {
       const start = new Date(now);
       start.setUTCHours(0, 0, 0, 0);
+      const today = +start;
       start.setUTCDate(start.getUTCDate() - 29);
-      const from = start.toISOString();
-      const days = Array.from({ length: 30 }, (_, i) => ({
-        day: new Date(+start + i * DAY).toISOString().slice(0, 10),
-        sessions: 0,
-        reviewed_sessions: 0,
-        bug_sessions: 0,
-        serious_sessions: 0,
-        both_sessions: 0,
-      }));
-      const byDay = new Map(days.map((day) => [day.day, day]));
-      const sessionStarts = new Map<string, number>();
-      const reviewed = new Set<string>(),
-        withBugs = new Set<string>(),
-        serious = new Set<string>();
-      const [bugCounts, , total] = await Promise.all([
-        (async () => {
-          const counts = {
-            open: 0,
-            fixed: 0,
-            wontfix: 0,
-            invalid: 0,
-            closed: 0,
-            recent: 0,
-          };
-          const seen = new Set<string>();
-          for (const result of await readBugPages(
-            (page) => `${bugsPath(c)}&status=all&page=${page}`,
-          )) {
-            for (const item of result.items) {
-              if (seen.has(item.id)) continue;
-              seen.add(item.id);
-              if (isOpen(item.status)) {
-                counts.open++;
-                if (
-                  Date.parse(item.discovered_at) >= now - DAY &&
-                  Date.parse(item.discovered_at) <= now
-                )
-                  counts.recent++;
-              } else if (
-                item.status === "fixed" ||
-                item.status === "wontfix" ||
-                item.status === "invalid"
-              ) {
-                counts[item.status]++;
-                counts.closed++;
-              } else if (item.status === "pr-closed") {
-                counts.closed++;
-              }
-            }
-          }
-          return counts;
-        })(),
-        (async () => {
-          for (let page = 0; ; page++) {
-            const query = encodeURIComponent(JSON.stringify({ from, page }));
-            const result = await read(
-              SessionPage,
-              `${reviewerPath(c)}&sessions=1&query=${query}`,
-            );
-            for (const s of result.sessions)
-              sessionStarts.set(s.session_id, Date.parse(s.first_received_at));
-            if (!result.has_more) break;
-          }
-        })(),
+      const recent = {
+        from: new Date(now - DAY).toISOString(),
+        to: new Date(now).toISOString(),
+      };
+      const sessionFilter = {
+        observation: {
+          reviewer: "friction-and-recovery",
+          attributes: { impact: "blocked" },
+        },
+        exclude_bug_statuses: ["judge-rejected", "invalid"],
+      };
+      const aggregatePath = (kind: "bugs" | "sessions", query: unknown) =>
+        `/api/project-aggregates/${kind}?project_id=${encodeURIComponent(c.qa_project_id!)}&query=${encodeURIComponent(JSON.stringify(query))}`;
+      const sessionSchema = QASessionAggregates.extend({
+        project_id: z.literal(c.qa_project_id!),
+      });
+      // QA zero-fills every intersecting UTC bucket. At exactly midnight its exclusive
+      // upper bound omits today, which the dashboard still displays as an empty date.
+      const chartDays = now === today ? 29 : 30;
+      const chartSchema = sessionSchema.refine(
+        (value) =>
+          value.series.length === chartDays &&
+          value.series.every(
+            (point, index) => Date.parse(point.start) === +start + index * DAY,
+          ),
+        {
+          path: ["series"],
+          message: "Expected complete, ordered UTC daily buckets",
+        },
+      );
+      const [bugs, chart, recentSessions] = await Promise.all([
         read(
-          z.object({ totals: z.object({ total_sessions: Count }) }),
-          `${reviewerPath(c)}&reviewer=friction-and-recovery&page=0`,
+          QABugAggregates.extend({ project_id: z.literal(c.qa_project_id!) }),
+          aggregatePath("bugs", recent),
         ),
-        (async () => {
-          const list = await read(ReviewerList, `${reviewerPath(c)}&summary=1`);
-          // Bug associations may come from any reviewer; impact=blocked is specific to friction.
-          // Reviewers are independent, so their page walks overlap instead of running end to end.
-          await mapLimit(list.reviewers, async (reviewer) => {
-            for (let page = 0; ; page++) {
-              const result = await read(
-                ReviewPage,
-                `${reviewerPath(c)}&reviewer=${encodeURIComponent(reviewer.key)}&page=${page}&filter=${encodeURIComponent(JSON.stringify({ from }))}`,
-              );
-              for (const run of result.runs) {
-                if (run.output) reviewed.add(run.session_id);
-                if (
-                  run.context.bugs.some(
-                    (b) => !["judge-rejected", "invalid"].includes(b.status),
-                  )
-                )
-                  withBugs.add(run.session_id);
-                if (
-                  reviewer.key === "friction-and-recovery" &&
-                  run.output?.observations.some(
-                    (o) =>
-                      !result.deleted_codes.includes(o.code) &&
-                      o.attributes.impact === "blocked",
-                  )
-                )
-                  serious.add(run.session_id);
-              }
-              if (!result.has_more) break;
-            }
-          });
-        })(),
+        read(
+          chartSchema,
+          aggregatePath("sessions", {
+            ...sessionFilter,
+            from: start.toISOString(),
+            to: recent.to,
+            bucket: "day",
+          }),
+        ),
+        read(
+          sessionSchema,
+          aggregatePath("sessions", { ...sessionFilter, ...recent }),
+        ),
       ]);
-      let recentSessions = 0;
-      let recentSeriousSessions = 0;
-      for (const [id, startedAt] of sessionStarts) {
-        if (startedAt >= now - DAY && startedAt <= now) {
-          recentSessions++;
-          if (serious.has(id)) recentSeriousSessions++;
-        }
-        const day = new Date(startedAt).toISOString().slice(0, 10);
-        const point = byDay.get(day);
-        if (!point) continue;
-        point.sessions++;
-        if (reviewed.has(id)) point.reviewed_sessions++;
-        if (withBugs.has(id)) point.bug_sessions++;
-        if (serious.has(id)) point.serious_sessions++;
-        if (withBugs.has(id) && serious.has(id)) point.both_sessions++;
+      const counts = {
+        open: 0,
+        fixed: 0,
+        wontfix: 0,
+        invalid: 0,
+        closed: 0,
+        recent: 0,
+      };
+      for (const item of bugs.statuses) {
+        if (isOpen(item.status)) {
+          counts.open += item.total;
+          counts.recent += item.in_period;
+        } else if (
+          item.status === "fixed" ||
+          item.status === "wontfix" ||
+          item.status === "invalid"
+        ) {
+          counts[item.status] += item.total;
+          counts.closed += item.total;
+        } else if (item.status === "pr-closed") counts.closed += item.total;
       }
       return DashboardOverview.parse({
         name: c.name,
-        sessions: total.totals.total_sessions,
-        sessions_24h: recentSessions,
-        serious_sessions_24h: recentSeriousSessions,
-        open_bugs: bugCounts.open,
-        fixed_bugs: bugCounts.fixed,
-        wontfix_bugs: bugCounts.wontfix,
-        invalid_bugs: bugCounts.invalid,
-        closed_bugs: bugCounts.closed,
-        new_open_bugs: bugCounts.recent,
-        days,
+        sessions: chart.all_time_sessions,
+        sessions_24h: recentSessions.totals.sessions,
+        serious_sessions_24h: recentSessions.totals.sessions_with_observations,
+        open_bugs: counts.open,
+        fixed_bugs: counts.fixed,
+        wontfix_bugs: counts.wontfix,
+        invalid_bugs: counts.invalid,
+        closed_bugs: counts.closed,
+        new_open_bugs: counts.recent,
+        days: Array.from({ length: 30 }, (_, index) => {
+          const point = chart.series[index];
+          return {
+            day: new Date(+start + index * DAY).toISOString().slice(0, 10),
+            sessions: point?.sessions ?? 0,
+            reviewed_sessions: point?.reviewed_sessions ?? 0,
+            bug_sessions: point?.sessions_with_bugs ?? 0,
+            serious_sessions: point?.sessions_with_observations ?? 0,
+            both_sessions: point?.sessions_with_both ?? 0,
+          };
+        }),
       });
     },
     async bug(c: Connection, id: string) {

@@ -106,14 +106,6 @@ export function Layout({
       <main id="main-content" tabIndex={-1}>
         {children}
       </main>
-      <footer>
-        <Link to="/" className="brand">
-          <img className="brand-icon" src="/images/replay-logo.svg" alt="" />
-          Self Healing
-        </Link>
-        <p>Understand the experience. Improve the software.</p>
-        <a href="https://github.com/replayio/self-healing">Source & setup ↗</a>
-      </footer>
     </>
   );
 }

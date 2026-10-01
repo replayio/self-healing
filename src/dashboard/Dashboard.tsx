@@ -162,7 +162,7 @@ function remember(path: string, value: unknown) {
 function clearDashboardCache() {
   cache.clear();
 }
-function useData<T>(path: string, schema: z.ZodType<T>) {
+function useData<T>(path: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>) {
   const [state, setState] = useState<{
     path: string;
     data?: T;
