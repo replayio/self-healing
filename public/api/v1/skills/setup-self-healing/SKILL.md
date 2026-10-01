@@ -102,21 +102,33 @@ export const capture = initCapture({
 
 // In the app's existing authentication callback:
 capture.identify({ id: user.id, name: user.name, email: user.email })
+// Only after authentication resolves to signed out (not during initial loading):
+capture.identify(null)
 ```
 
 The package owns network, interaction, identity, metrics and session-context generation, timestamps, session rollover, batching and retries. Preserve the app's existing capture policy. Do not add a generic field-redaction layer. Keep dependencies locked and upgrade the package to receive capture fixes.
 
 ### Capture behavior and lifecycle
 
-The package captures fetch requests (browser-visible headers and bodies), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization and endpoint reuses the controller.
+The package captures fetch exchanges (request bodies, response headers and bodies; request headers are omitted), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization and endpoint reuses the controller.
 
-- `capture.identify({id, name, email})` connects the app’s existing authentication hook to capture.
+- `capture.identify({id, name, email})` records an authenticated observation. Call `capture.identify(null)` for a resolved signed-out state. Until either call the auth state is unknown; do not map loading to signed-out.
 - `await capture.flush()` waits for in-flight captures and pending uploads. It rejects if FullStory has no session yet or a capture/upload failed.
 - `await capture.stop()` stops new auxiliary capture, removes listeners, and flushes pending data. It does not stop FullStory. It cannot restart on that page; subsequent `identify()` calls do nothing.
 
 Uploads use the original fetch so they do not capture themselves. The package retries network errors, 429s, server errors, and `upload_busy` up to three attempts with identical bodies and event IDs. Session rollover keeps ownership of requests already in flight. `captured_at` is Unix milliseconds and `source_timestamp` is page-relative milliseconds; installers do not generate these fields.
 
 Capture retains the existing producer limits: bodies above 1 MB become null, network bodies have an 8 MB budget per page/session, and network and interaction counts each stop at 5,000 entries per page/session. Dropped counts appear in capture context. The package emits version-1 artifacts and `session/capture-producer` metadata identifying its name and version; this metadata is provenance, not authentication.
+
+### Authentication evidence (capture 0.2.0)
+
+The package automatically samples localStorage/sessionStorage key presence and script-visible cookie presence at initialization, session rollover, fetch request/response boundaries, interactions, cross-document storage events, flush and stop. These are sampled observations, not a complete storage mutation log. Changes between samples can be missed. Storage presence alone does not prove valid authentication. Storage values are never read; cookie values returned by `document.cookie` are discarded locally. Raw names are replaced by page-local opaque slot IDs; no names, values or value hashes are uploaded. HttpOnly cookies are explicitly unobservable. Blocked storage is distinguished from empty storage.
+
+Optionally supply `storageAliases: [{ area: 'localStorage', key: '<known-auth-key>', alias: 'primary-session' }]` in `initCapture`. Use non-sensitive static aliases; configured keys remain in the browser. Areas are `localStorage`, `sessionStorage`, and `cookie`. Aliases help QA interpret known auth slots without exposing raw names. Do not supply account IDs or other personal data as aliases.
+
+`session/auth-state-<page-id>` version 1 holds a cumulative snapshot for one page within one FullStory session. Separate page keys prevent concurrent tabs or reloads overwriting each other's evidence with QA's generic artifact replacement. The first and latest 15 observations are retained; dropped observations are counted. Each area includes up to 32 present slots and flags incomplete enumeration; a missing slot implies absence only for a complete, observable inventory. Slot identity persists for the page, including session rollover, up to 512 distinct names. Auth observations include when `identify` last ran so rollover does not imply a fresh authentication check. This release supplies evidence only; QA's journey startup must separately consume it to provision fresh test-account authentication.
+
+Request headers are always `{}` in exported exchanges; outgoing application requests are unchanged. Existing request/response body capture remains in place: this change is not a general secret scrubber for those bodies. Publish the package and deploy the forwarding API accepting these artifacts before upgrading installations.
 
 ## Forward captures through Self Healing
 

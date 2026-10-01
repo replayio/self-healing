@@ -215,16 +215,73 @@ const pending = (operation: Omit<Operation, "implemented">): Operation => ({
 });
 // The connection API is Obvious's operational entry point. Auxiliary payloads use
 // QA's versioned namespace/key envelope; QA validates each supported payload schema.
+const StoragePresenceEntry = z
+  .object({
+    slot: z.string().regex(/^slot-[0-9]+$/),
+    alias: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]{0,47}$/)
+      .optional(),
+    present: z.literal(true),
+  })
+  .strict();
+const StoragePresenceArea = z
+  .object({
+    area: z.enum(["localStorage", "sessionStorage", "cookie"]),
+    observable: z.boolean(),
+    truncated: z.boolean(),
+    entries: z.array(StoragePresenceEntry).max(32),
+  })
+  .strict();
+export const AuthStatePayload = z
+  .object({
+    version: z.literal(1),
+    page_id: z.string().uuid(),
+    page_started_at: z.number().finite().nonnegative(),
+    dropped_observation_count: z.number().int().nonnegative(),
+    observations: z
+      .array(
+        z
+          .object({
+            captured_at: z.number().finite().nonnegative(),
+            source_timestamp: z.number().finite().nonnegative(),
+            reason: z.enum([
+              "capture-start",
+              "session-start",
+              "storage-event",
+              "interaction",
+              "request",
+              "response",
+              "identify",
+            ]),
+            auth_state: z.enum(["unknown", "authenticated", "unauthenticated"]),
+            auth_observed_at: z.number().finite().nonnegative().nullable(),
+            storage: z
+              .object({
+                areas: z.array(StoragePresenceArea).length(3),
+                http_only_cookies: z.literal("unobservable"),
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(16),
+  })
+  .strict();
 export const AuxiliaryArtifact = z
   .object({
     namespace: z.enum(["network", "interaction", "session"]),
-    key: z.enum([
-      "captured-exchanges",
-      "captured-interactions",
-      "metrics",
-      "identity",
-      "capture-context",
-      "capture-producer",
+    key: z.union([
+      z.string().regex(/^auth-state-[0-9a-f-]{36}$/),
+      z.enum([
+        "captured-exchanges",
+        "captured-interactions",
+        "metrics",
+        "identity",
+        "capture-context",
+        "capture-producer",
+      ]),
     ]),
     schema_version: z.literal(1),
     payload: z.record(z.unknown()),
@@ -232,13 +289,29 @@ export const AuxiliaryArtifact = z
   .strict()
   .refine(
     (artifact) =>
-      ({
+      (artifact.namespace === "session" &&
+        /^auth-state-[0-9a-f-]{36}$/.test(artifact.key)) ||
+      {
         network: ["captured-exchanges"],
         interaction: ["captured-interactions"],
         session: ["metrics", "identity", "capture-context", "capture-producer"],
-      })[artifact.namespace].includes(artifact.key),
+      }[artifact.namespace].includes(artifact.key),
     "Unsupported auxiliary namespace/key pair",
-  );
+  )
+  .superRefine((artifact, ctx) => {
+    if (!artifact.key.startsWith("auth-state-")) return;
+    const parsed = AuthStatePayload.safeParse(artifact.payload);
+    if (
+      !parsed.success ||
+      artifact.key !== `auth-state-${parsed.data.page_id}`
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Invalid page-scoped auth state evidence",
+        path: ["payload"],
+      });
+    }
+  });
 const ConnectionInput = object({
   start_exploration: z
     .boolean()

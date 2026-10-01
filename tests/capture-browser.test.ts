@@ -5,7 +5,8 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
-import { operations } from "../src/api/contracts.ts";
+import { operations, AuxiliaryArtifact } from "../src/api/contracts.ts";
+import * as authEvidence from "../packages/capture/src/auth-evidence.ts";
 import * as transport from "../packages/capture/src/transport.ts";
 const NetworkAuxiliaryPayloadSchema = z.object({
   exchanges: z.array(
@@ -83,6 +84,12 @@ const UploadSchema = z.object({
           }
           return new Response("", { status: 202 });
         }
+        if (url.includes("startup/slow")) {
+          assert.equal(
+            new Request(input, init).headers.get("authorization"),
+            "Bearer NEVER_CAPTURE_THIS",
+          );
+        }
         if (url.endsWith("/slow"))
           await new Promise<void>((resolve) => {
             releaseSlow = resolve;
@@ -105,7 +112,9 @@ const UploadSchema = z.object({
     };
     const exports: {
       initCapture?: (options: { orgId: string }) => {
-        identify: (user: { id: string; name: string; email: string }) => void;
+        identify: (
+          user: { id: string; name: string; email: string } | null,
+        ) => void;
         flush(): Promise<void>;
         stop(): Promise<void>;
       };
@@ -123,7 +132,11 @@ const UploadSchema = z.object({
     runInNewContext(output, {
       exports,
       require: (name: string) =>
-        name === "@fullstory/browser" ? sdk : transport,
+        name === "@fullstory/browser"
+          ? sdk
+          : name === "./auth-evidence.js"
+            ? authEvidence
+            : transport,
       window: fakeWindow,
       URL,
       Request,
@@ -160,7 +173,12 @@ const UploadSchema = z.object({
       "initialization is idempotent",
     );
     assert.ok(callbacks.ready);
-    const startup = fakeWindow.fetch("https://example.test/startup/slow");
+    const startup = fakeWindow.fetch("https://example.test/startup/slow", {
+      headers: {
+        Authorization: "Bearer NEVER_CAPTURE_THIS",
+        "X-Private": "PRIVATE_HEADER_VALUE",
+      },
+    });
     assert.ok(releaseSlow);
     await callbacks.ready({ sessionUrl });
     const initialBody = uploads[0]!;
@@ -191,6 +209,41 @@ const UploadSchema = z.object({
     assert.equal(
       startupEntries.filter((e) => e.url.endsWith("/startup/slow")).length,
       1,
+    );
+    assert.ok(!uploads.join("").includes("NEVER_CAPTURE_THIS"));
+    assert.ok(!uploads.join("").includes("PRIVATE_HEADER_VALUE"));
+    assert.deepEqual(startupEntries[0]?.request_headers, {});
+    const AuthSchema = z.object({
+      observations: z.array(
+        z.object({
+          auth_state: z.string(),
+          reason: z.string(),
+          auth_observed_at: z.number().nullable(),
+        }),
+      ),
+    });
+    const initialAuth = initialRegistration.auxiliary_data.find((a) =>
+      a.key.startsWith("auth-state-"),
+    )!;
+    assert.equal(
+      AuthSchema.parse(initialAuth.payload).observations[0]?.auth_state,
+      "unknown",
+    );
+    const validAuth = { ...initialAuth, schema_version: 1 };
+    assert.equal(AuxiliaryArtifact.safeParse(validAuth).success, true);
+    assert.equal(
+      AuxiliaryArtifact.safeParse({
+        ...validAuth,
+        payload: { ...(initialAuth.payload as object), token: "SECRET" },
+      }).success,
+      false,
+    );
+    assert.equal(
+      AuxiliaryArtifact.safeParse({
+        ...validAuth,
+        key: "auth-state-00000000-0000-4000-8000-000000000000",
+      }).success,
+      false,
     );
     uploads.length = 0;
     async function flush() {
@@ -298,6 +351,14 @@ const UploadSchema = z.object({
         ) + "\n",
       );
     }
+    const authenticated = uploads
+      .flatMap((body) => UploadSchema.parse(JSON.parse(body)).auxiliary_data)
+      .filter((a) => a.key.startsWith("auth-state-"));
+    assert.equal(
+      AuthSchema.parse(authenticated.at(-1)!.payload).observations.at(-1)
+        ?.auth_state,
+      "authenticated",
+    );
     const oldUrl = sessionUrl;
     const slow = fakeWindow.fetch("https://example.test/slow");
     assert.ok(releaseSlow);
@@ -344,6 +405,25 @@ const UploadSchema = z.object({
       ).interactions.length,
       1,
     );
+    const rolloverAuth = AuthSchema.parse(
+      freshArtifacts.find((a) => a.key.startsWith("auth-state-"))!.payload,
+    );
+    assert.equal(rolloverAuth.observations[0]?.reason, "session-start");
+    assert.equal(rolloverAuth.observations[0]?.auth_state, "authenticated");
+    capture.identify(null);
+    await flush();
+    const signedOut = uploads
+      .flatMap((body) => UploadSchema.parse(JSON.parse(body)).auxiliary_data)
+      .filter((a) => a.key.startsWith("auth-state-"));
+    assert.equal(
+      AuthSchema.parse(signedOut.at(-1)!.payload).observations.at(-1)
+        ?.auth_state,
+      "unauthenticated",
+    );
+    for (const body of uploads)
+      operations
+        .find((operation) => operation.id === "ingestSession")!
+        .body!.parse(JSON.parse(body));
     const ContextSchema = z.object({
       pages: z.array(
         z.object({
@@ -432,14 +512,33 @@ const UploadSchema = z.object({
       ),
     );
     assert.ok(recovered.some((a) => a.namespace === "interaction"));
-    assert.deepEqual(recovered.find((a) => a.key === "identity")?.payload, {
-      version: 1,
-      email: "user@example.test",
-    });
+    assert.equal(
+      recovered.find((a) => a.key === "identity"),
+      undefined,
+      "sign-out must not carry identity into a new session",
+    );
     assert.deepEqual(
       recovered.filter((a) => a.key === "metrics").at(-1)?.payload,
       { version: 1, interaction_count: 1 },
     );
+    for (let i = 0; i < 40; i++)
+      capture.identify(
+        i % 2 ? null : { id: "test", name: "Test", email: "test@example.test" },
+      );
+    await flush();
+    const bounded = uploads
+      .flatMap((body) => UploadSchema.parse(JSON.parse(body)).auxiliary_data)
+      .filter((a) => a.key.startsWith("auth-state-"))
+      .at(-1)!;
+    const boundedPayload = z
+      .object({
+        observations: z.array(z.object({ reason: z.string() })),
+        dropped_observation_count: z.number(),
+      })
+      .parse(bounded.payload);
+    assert.equal(boundedPayload.observations.length, 16);
+    assert.equal(boundedPayload.observations[0]?.reason, "session-start");
+    assert.ok(boundedPayload.dropped_observation_count > 0);
     const uploadCount = uploads.length;
     sessionUrl = "";
     await fakeWindow.fetch("https://example.test/capture-stopped");

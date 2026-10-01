@@ -12,6 +12,10 @@ QA consumes compatible versioned artifacts and recognizes the package/version pr
 ingestion and review code does not import this package. When Subtext supplies the required accessors,
 the Self Healing skills will describe the replacement and migration.
 
+## Authentication evidence
+
+Version 0.2.0 adds sampled, value-free storage presence and timestamped `identify` state in page-scoped auxiliary artifacts. Request headers are no longer exported. See the setup skill for behavior, limits, integration and rollout; QA can retain these generic artifacts without importing the package. Consuming them during journey startup is separate work.
+
 ## Development and release
 
 The capture implementation lives in `packages/capture/src`. Change producers here and keep QA’s

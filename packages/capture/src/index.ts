@@ -1,8 +1,11 @@
+import { createStorageObserver, type StorageAlias } from "./auth-evidence.js";
 import { FullStory, init } from "@fullstory/browser";
 import { splitBatches, type Artifact } from "./transport.js";
 
 export interface CaptureOptions {
   orgId: string;
+  /** Optional non-sensitive labels for known auth keys; raw keys and values are never uploaded. */
+  storageAliases?: StorageAlias[];
   /** Same-origin POST route holding the server-side credential. */
   endpoint?: string;
   onError?: (error: Error) => void;
@@ -127,6 +130,9 @@ export function initCapture(options: CaptureOptions): CaptureController {
     throw new Error("Capture endpoint must be same-origin");
   }
   const orgId = options.orgId;
+  const observeStorage = createStorageObserver(options.storageAliases);
+  let authState: "unknown" | "authenticated" | "unauthenticated" = "unknown";
+  let authObservedAt: number | null = null;
   let stopped = false;
   let lastError: Error | undefined;
   const reportError = (error: unknown) => {
@@ -167,6 +173,17 @@ export function initCapture(options: CaptureOptions): CaptureController {
       droppedNetworkCount: 0,
       droppedInteractionCount: 0,
       queuedContext: "",
+      authEvidence: [] as Array<{
+        captured_at: number;
+        source_timestamp: number;
+        reason: string;
+        auth_state: typeof authState;
+        auth_observed_at: number | null;
+        storage: ReturnType<typeof observeStorage>;
+      }>,
+      droppedAuthEvidence: 0,
+      queuedAuthEvidence: "",
+      lastAuthEvidence: "",
     };
   }
   type CaptureSession = ReturnType<typeof createCaptureSession>;
@@ -184,6 +201,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         previous.uploadTimer = null;
         void queueCaptureUpload(previous);
         currentSession = createCaptureSession(sessionUrl, previous.sessionUrl);
+        observeAuth(currentSession, "session-start");
         sessions.add(currentSession);
       }
       uploadCapture(currentSession);
@@ -202,6 +220,35 @@ export function initCapture(options: CaptureOptions): CaptureController {
       return null;
     }
   }
+
+  function observeAuth(session: CaptureSession, reason: string): void {
+    const storage = observeStorage(window);
+    const signature = JSON.stringify({ authState, authObservedAt, storage });
+    if (signature === session.lastAuthEvidence) return;
+    session.lastAuthEvidence = signature;
+    const source_timestamp = Math.round(performance.now());
+    if (session.authEvidence.length >= 16) {
+      // Keep the first observation and the most recent transitions.
+      session.authEvidence.splice(1, 1);
+      session.droppedAuthEvidence++;
+    }
+    session.authEvidence.push({
+      captured_at: performance.timeOrigin + source_timestamp,
+      source_timestamp,
+      reason,
+      auth_state: authState,
+      auth_observed_at: authObservedAt,
+      storage,
+    });
+    uploadCapture(session);
+  }
+  observeAuth(currentSession, "capture-start");
+  const storageChanged = () => {
+    if (stopped) return;
+    const session = captureSession();
+    if (session) observeAuth(session, "storage-event");
+  };
+  window.addEventListener("storage", storageChanged);
 
   setCapturedUserEmail = (email) => {
     userEmail = email;
@@ -261,12 +308,29 @@ export function initCapture(options: CaptureOptions): CaptureController {
       dropped_network_count: session.droppedNetworkCount,
       dropped_interaction_count: session.droppedInteractionCount,
     });
+    const authEvidence = JSON.stringify({
+      version: 1,
+      page_id: pageId,
+      page_started_at: performance.timeOrigin,
+      observations: session.authEvidence,
+      dropped_observation_count: session.droppedAuthEvidence,
+    });
     const auxiliaryData: Artifact[] = [
+      ...(authEvidence !== session.queuedAuthEvidence
+        ? [
+            {
+              namespace: "session",
+              key: `auth-state-${pageId}`,
+              schema_version: 1,
+              payload: JSON.parse(authEvidence) as Record<string, unknown>,
+            },
+          ]
+        : []),
       {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.0" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.2.0" },
       },
       ...(context !== session.queuedContext
         ? [
@@ -341,6 +405,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     ];
     if (auxiliaryData.length === 1) return session.uploadChain;
     session.queuedContext = context;
+    session.queuedAuthEvidence = authEvidence;
     session.queuedExchangeCount = session.capturedExchanges.length;
     session.queuedInteractionCount = session.interactionCount;
     session.queuedCapturedInteractionCount =
@@ -404,6 +469,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     if (stopped || !event.isTrusted) return;
     const session = captureSession();
     if (!session) return;
+    observeAuth(session, "interaction");
     if (countsAsSessionInteraction(event)) session.interactionCount++;
     if (session.capturedInteractions.length >= MAX_CAPTURED_INTERACTIONS) {
       session.droppedInteractionCount++;
@@ -512,6 +578,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
 
     const session = captureSession();
     if (!session) return nativeFetch(request);
+    observeAuth(session, "request");
     const startedBeforeReady = !fullStoryReady;
     const sourceTimestamp = Math.round(performance.now());
     const capturedAt = performance.timeOrigin + sourceTimestamp;
@@ -529,6 +596,8 @@ export function initCapture(options: CaptureOptions): CaptureController {
       inFlight.delete(responsePromise);
     }
     const capture = (async () => {
+      if (!stopped && session === currentSession)
+        observeAuth(session, "response");
       const clone = response.clone();
       const responseBytes = await clone.arrayBuffer().catch(() => null);
       const capturedRequestBody = await requestBody;
@@ -551,7 +620,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         method: request.method,
         url: request.url,
         status: clone.status,
-        request_headers: Object.fromEntries(request.headers.entries()),
+        request_headers: {},
         request_body: capturedRequestBody,
         response_headers: Object.fromEntries(clone.headers.entries()),
         response_body:
@@ -581,9 +650,19 @@ export function initCapture(options: CaptureOptions): CaptureController {
 
   const controller: CaptureController = {
     identify: (user) => {
-      if (!stopped) identifyFullStoryUser(user);
+      if (stopped) return;
+      const session = captureSession();
+      authState = user ? "authenticated" : "unauthenticated";
+      authObservedAt = performance.timeOrigin + performance.now();
+      if (!user) {
+        userEmail = null;
+        if (session) session.userEmail = null;
+      }
+      if (session) observeAuth(session, "identify");
+      identifyFullStoryUser(user);
     },
     async flush() {
+      if (!stopped) storageChanged();
       while (inFlight.size) await Promise.allSettled([...inFlight]);
       for (const session of sessions) {
         if (session.uploadTimer) clearTimeout(session.uploadTimer);
@@ -595,7 +674,9 @@ export function initCapture(options: CaptureOptions): CaptureController {
         throw new Error("FullStory session is not ready");
     },
     async stop() {
+      storageChanged();
       stopped = true;
+      window.removeEventListener("storage", storageChanged);
       for (const eventName of CAPTURED_SESSION_INTERACTION_EVENTS) {
         window.removeEventListener(eventName, recordInteraction, {
           capture: true,
