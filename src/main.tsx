@@ -40,7 +40,7 @@ function App() {
   if (path.replace(/\/$/, "") === "/dashboard") {
     return (
       <React.Suspense fallback={<p className="dh-state" role="status">Opening dashboard…</p>}>
-        <Dashboard />
+        <Dashboard theme={theme} setTheme={setTheme} />
       </React.Suspense>
     );
   }

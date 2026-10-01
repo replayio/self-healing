@@ -15,6 +15,8 @@ import {
 import "./dashboard.css";
 import { screenshotQueue } from "./screenshot-queue";
 import { dashboardTicket } from "./launch-link";
+import { ThemeToggle } from "../components/ThemeToggle";
+import type { Theme } from "../lib/theme";
 
 type Overview = z.infer<typeof DashboardOverview>;
 type Bug = z.infer<typeof DashboardBug>;
@@ -1241,7 +1243,13 @@ function SessionsTab() {
     </>
   );
 }
-export default function Dashboard() {
+export default function Dashboard({
+  theme,
+  setTheme,
+}: {
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+}) {
   const initial = new URLSearchParams(window.location.search).get("tab");
   const [tab, setTab] = useState<Tab>(
     tabs.includes(initial as Tab) ? (initial as Tab) : "overview",
@@ -1304,15 +1312,24 @@ export default function Dashboard() {
     <div className="dh-app">
       <div className="dh-chrome">
         <header className="dh-topbar">
-          <a className="brand" href="/">
-            <img className="brand-icon" src="/images/replay-logo.svg" alt="" />
-            Self Healing
-          </a>
-          {ready && (
-            <button className="dh-signout" onClick={logout}>
-              End dashboard session
-            </button>
-          )}
+          <div className="dh-topbar-lead">
+            <a className="dh-exit" href="/" aria-label="Back to site">
+              <span aria-hidden="true">←</span>
+            </a>
+            <a className="brand" href="/">
+              <img className="brand-icon" src="/images/replay-logo.svg" alt="" />
+              Self Healing
+            </a>
+          </div>
+          <div className="dh-topbar-actions">
+            <ThemeToggle theme={theme} setTheme={setTheme} />
+            {ready && (
+              <button className="dh-signout" onClick={logout}>
+                <span className="dh-signout-long">End dashboard session</span>
+                <span className="dh-signout-short">End session</span>
+              </button>
+            )}
+          </div>
         </header>
         <nav className="dh-tabnav" aria-label="Dashboard navigation">
           <div className="dh-tabnav-track">
