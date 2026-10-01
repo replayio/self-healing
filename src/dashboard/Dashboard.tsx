@@ -142,6 +142,24 @@ function initialize() {
   }
   return initialization;
 }
+// Moving between tabs revisits the same endpoints, and a cold overview costs several seconds of QA
+// pagination. Keep the last payload per path so a revisit paints immediately and the refetch only
+// has to replace what is already on screen. Snapshots stay out: they are base64 images.
+const cache = new Map<string, unknown>();
+const CACHE_LIMIT = 24;
+const cacheable = (path: string) => !path.startsWith("session-snapshot?");
+function remember(path: string, value: unknown) {
+  if (!cacheable(path)) return;
+  cache.delete(path);
+  cache.set(path, value);
+  for (const key of cache.keys()) {
+    if (cache.size <= CACHE_LIMIT) break;
+    cache.delete(key);
+  }
+}
+function clearDashboardCache() {
+  cache.clear();
+}
 function useData<T>(path: string, schema: z.ZodType<T>) {
   const [state, setState] = useState<{
     path: string;
@@ -151,12 +169,21 @@ function useData<T>(path: string, schema: z.ZodType<T>) {
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    setState({ path });
+    const cached = cache.get(path);
+    // Show the previous payload while revalidating; the fetch below replaces it when it lands.
+    setState({
+      path,
+      data: cached === undefined ? undefined : schema.safeParse(cached).data,
+    });
     (path.startsWith("session-snapshot?")
       ? screenshotQueue(() => api(path, controller.signal), controller.signal)
       : api(path, controller.signal)
     )
-      .then((value) => schema.parse(value))
+      .then((value) => {
+        const data = schema.parse(value);
+        remember(path, value);
+        return data;
+      })
       .then((data) => {
         if (!controller.signal.aborted) setState({ path, data });
       })
@@ -1263,6 +1290,8 @@ export default function Dashboard() {
   async function logout() {
     try {
       await api("logout", undefined, {});
+      // The cache outlives the component, so it has to go with the session it was filled from.
+      clearDashboardCache();
       setReady(false);
       setError(
         "Dashboard session ended. Open a fresh link from your factory to return.",

@@ -173,6 +173,32 @@ export function dashboardData(
       );
     return parsed.data;
   }
+  // Fan-out stays bounded: going wider than this trades QA's rate limit for the latency it saves.
+  async function mapLimit<I, O>(items: I[], fn: (item: I) => Promise<O>) {
+    const results = new Array<O>(items.length);
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(6, items.length) }, async () => {
+        for (let i = next++; i < items.length; i = next++)
+          results[i] = await fn(items[i]!);
+      }),
+    );
+    return results;
+  }
+  // QA reports the row count on the first page, so the remaining pages are fetched together rather
+  // than walked one request at a time. Order is preserved because callers slice by page.
+  async function readBugPages(path: (page: number) => string) {
+    const first = await read(BugPage, path(1));
+    const rest = Math.ceil(first.total / 100) - 1;
+    if (rest < 1) return [first];
+    return [
+      first,
+      ...(await mapLimit(
+        Array.from({ length: rest }, (_, i) => i + 2),
+        (page) => read(BugPage, path(page)),
+      )),
+    ];
+  }
   const bug = (b: z.infer<typeof Bug>) =>
     DashboardBug.parse({
       ...b,
@@ -218,11 +244,9 @@ export function dashboardData(
             recent: 0,
           };
           const seen = new Set<string>();
-          for (let page = 1; ; page++) {
-            const result = await read(
-              BugPage,
-              `${bugsPath(c)}&status=all&page=${page}`,
-            );
+          for (const result of await readBugPages(
+            (page) => `${bugsPath(c)}&status=all&page=${page}`,
+          )) {
             for (const item of result.items) {
               if (seen.has(item.id)) continue;
               seen.add(item.id);
@@ -244,7 +268,6 @@ export function dashboardData(
                 counts.closed++;
               }
             }
-            if (page * 100 >= result.total) break;
           }
           return counts;
         })(),
@@ -267,7 +290,8 @@ export function dashboardData(
         (async () => {
           const list = await read(ReviewerList, `${reviewerPath(c)}&summary=1`);
           // Bug associations may come from any reviewer; impact=blocked is specific to friction.
-          for (const reviewer of list.reviewers) {
+          // Reviewers are independent, so their page walks overlap instead of running end to end.
+          await mapLimit(list.reviewers, async (reviewer) => {
             for (let page = 0; ; page++) {
               const result = await read(
                 ReviewPage,
@@ -293,7 +317,7 @@ export function dashboardData(
               }
               if (!result.has_more) break;
             }
-          }
+          });
         })(),
       ]);
       let recentSessions = 0;
@@ -392,18 +416,14 @@ export function dashboardData(
         // QA has individual status filters, but no combined resolved filter.
         // Scan its ordered list before slicing so filtering cannot lose rows or pages.
         const closed = [] as z.infer<typeof Bug>[];
-        for (let sourcePage = 1; ; sourcePage++) {
-          const result = await read(
-            BugPage,
-            `${bugsPath(c)}&status=all&severitySort=desc&page=${sourcePage}`,
-          );
+        for (const result of await readBugPages(
+          (page) => `${bugsPath(c)}&status=all&severitySort=desc&page=${page}`,
+        ))
           closed.push(
             ...result.items.filter((b) =>
               ["fixed", "wontfix", "invalid", "pr-closed"].includes(b.status),
             ),
           );
-          if (sourcePage * 100 >= result.total) break;
-        }
         return DashboardBugs.parse({
           items: await augment(
             c,
