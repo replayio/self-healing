@@ -578,6 +578,30 @@ export const BugVerifications = z.object({
   page: Count,
   has_more: z.boolean(),
 });
+// QA aggregate responses are validated server-side before projection into the dashboard API.
+export const QABugAggregates = z.object({
+  project_id: z.string(),
+  statuses: z.array(
+    z.object({ status: z.string(), total: Count, in_period: Count }),
+  ),
+});
+export const QASessionAggregateCounts = z.object({
+  sessions: Count,
+  reviewed_sessions: Count,
+  sessions_with_bugs: Count,
+  sessions_with_observations: Count,
+  sessions_with_both: Count,
+});
+export const QASessionAggregates = z.object({
+  project_id: z.string(),
+  all_time_sessions: Count,
+  totals: QASessionAggregateCounts,
+  series: z.array(
+    QASessionAggregateCounts.extend({
+      start: z.string().datetime({ offset: true }),
+    }),
+  ),
+});
 export const DashboardOverview = z.object({
   name: z.string(),
   open_bugs: Count,
