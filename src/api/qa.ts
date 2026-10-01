@@ -6,6 +6,7 @@ export class QARequestError extends HttpError {
       [400, 409, 413, 429].includes(upstreamStatus) ? upstreamStatus : 503,
       "qa_request_failed",
       `QA rejected the request (HTTP ${upstreamStatus}).`,
+      { upstream_status: upstreamStatus },
     );
   }
 }

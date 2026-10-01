@@ -8,7 +8,7 @@ import {
   DashboardOverview,
   DashboardReports,
 } from "./contracts.ts";
-import { HttpError } from "./errors.ts";
+import { HttpError, validationDiagnostics } from "./errors.ts";
 import { qaClient, QARequestError } from "./qa.ts";
 import type { Connection } from "./connections.ts";
 
@@ -170,6 +170,7 @@ export function dashboardData(
         503,
         "qa_contract_changed",
         "QA returned unexpected dashboard data.",
+        validationDiagnostics("qa_dashboard", parsed.error),
       );
     return parsed.data;
   }
@@ -361,6 +362,7 @@ export function dashboardData(
           503,
           "qa_contract_changed",
           "QA returned unexpected bug data.",
+          validationDiagnostics("qa_bug", parsed.error),
         );
       const b = parsed.data;
       return DashboardBugDetail.parse({

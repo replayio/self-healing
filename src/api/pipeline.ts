@@ -11,7 +11,7 @@ import {
 } from "./contracts.ts";
 import { dashboardData } from "./dashboard-data.ts";
 import type { Connection } from "./connections.ts";
-import { HttpError } from "./errors.ts";
+import { HttpError, validationDiagnostics } from "./errors.ts";
 import { qaClient, QARequestError } from "./qa.ts";
 
 const Row = z.object({ id: QAId, project_id: QAId }).passthrough();
@@ -75,6 +75,7 @@ export function pipelineData(
         503,
         "qa_contract_changed",
         "QA returned unexpected pipeline data.",
+        validationDiagnostics("qa_pipeline", result.error),
       );
     return result.data;
   }
