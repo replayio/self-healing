@@ -165,10 +165,6 @@
 .dh-chart svg g[tabindex]:focus {
   outline: 2px solid #a3a3a3;
 }
-.dh-chart > .dh-note {
-  padding: 0 24px;
-  font-size: 12px;
-}
 .dh-legend {
   display: flex;
   gap: 18px;
@@ -187,30 +183,11 @@
   height: 9px;
   border-radius: 2px;
 }
-.dh-no-issue {
+.dh-no-friction {
   background: #93c5fd;
 }
-.dh-serious {
+.dh-friction {
   background: #f59e0b;
-}
-.dh-bug {
-  background: #f02d5e;
-}
-.dh-both {
-  background: #7c3aed;
-}
-.dh-chart-detail {
-  margin: 10px 24px;
-  padding: 12px;
-  min-height: 44px;
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  background: #fafafa;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 12px;
-  color: #525252;
 }
 .dh-table-scroll {
   overflow-x: auto;
@@ -608,4 +585,51 @@
 .dh-tabs button[aria-pressed="true"] {
   background: #e8eee5;
   font-weight: 600;
+}
+
+.dh-chart-plot {
+  position: relative;
+}
+.dh-chart-tooltip {
+  position: absolute;
+  top: 8px;
+  right: 24px;
+  width: 250px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 16px #00000014;
+  pointer-events: none;
+  font-size: 12px;
+  color: #525252;
+  font-variant-numeric: tabular-nums;
+}
+.dh-chart-tooltip strong {
+  color: #171717;
+  font-size: 13px;
+}
+.dh-chart-tooltip-total {
+  margin: 4px 0 12px;
+  color: #737373;
+}
+.dh-chart-tooltip-row {
+  display: grid;
+  grid-template-columns: 1fr auto 52px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.dh-chart-tooltip-row > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.dh-chart-tooltip-row > span:last-child {
+  text-align: right;
+}
+.dh-chart-tooltip-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
 }

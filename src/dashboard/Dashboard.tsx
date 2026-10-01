@@ -201,8 +201,8 @@ const pct = (part: number, total: number) =>
   total ? `${((100 * part) / total).toFixed(1)}%` : "—";
 export function SessionChart({ days }: { days: Overview["days"] }) {
   const [active, setActive] = useState<number | null>(null);
-  const max = Math.max(1, ...days.map((d) => d.sessions));
   const point = active === null ? undefined : days[active];
+  const max = Math.max(1, ...days.map((d) => d.sessions));
   const width = 960,
     height = 250,
     top = 15,
@@ -220,120 +220,122 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
       </div>
       <div className="dh-legend">
         <span>
-          <i className="dh-no-issue" />
-          No detected issue
+          <i className="dh-no-friction" />
+          No friction
         </span>
         <span>
-          <i className="dh-serious" />
-          Serious issue only
-        </span>
-        <span>
-          <i className="dh-bug" />
-          Bug only
-        </span>
-        <span>
-          <i className="dh-both" />
-          Bug & serious issue
+          <i className="dh-friction" />
+          Friction
         </span>
       </div>
-      <div className="dh-chart-scroll">
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          role="group"
-          aria-label="Daily stacked session counts. Focus a column for counts and percentages."
-        >
-          {[0, 1, 2, 3, 4].map((i) => (
-            <g key={i}>
-              <line
-                x1={left}
-                x2={width - 15}
-                y1={top + (i * plot) / 4}
-                y2={top + (i * plot) / 4}
-                stroke="#e5e5e5"
-                strokeDasharray="3 3"
-              />
-              <text x={left - 8} y={top + (i * plot) / 4 + 4} textAnchor="end">
-                {Math.ceil((max * (4 - i)) / 4)}
-              </text>
-            </g>
-          ))}
-          {days.map((d, index) => {
-            const parts = [
-              d.sessions -
-                d.bug_sessions -
-                d.serious_sessions +
-                d.both_sessions,
-              d.serious_sessions - d.both_sessions,
-              d.bug_sessions - d.both_sessions,
-              d.both_sessions,
-            ];
-            const colors = ["#93c5fd", "#f59e0b", "#f02d5e", "#7c3aed"];
-            let used = 0;
-            const label = `${date(d.day)}: ${d.sessions} sessions, ${pct(d.bug_sessions, d.sessions)} with bugs, ${pct(d.serious_sessions, d.sessions)} with friction, ${d.reviewed_sessions} reviewed.`;
-            return (
-              <g
-                key={d.day}
-                tabIndex={0}
-                role="img"
-                aria-label={label}
-                onFocus={() => setActive(index)}
-                onMouseEnter={() => setActive(index)}
-                onClick={() => setActive(index)}
-              >
-                <title>{label}</title>
-                <rect
-                  x={left + step * index}
-                  y={top}
-                  width={step}
-                  height={plot}
-                  fill={active === index ? "#f5f5f5" : "transparent"}
+      <div className="dh-chart-plot" onMouseLeave={() => setActive(null)}>
+        <div className="dh-chart-scroll" onScroll={() => setActive(null)}>
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            role="group"
+            aria-label="Daily stacked session counts by friction."
+          >
+            {[0, 1, 2, 3, 4].map((i) => (
+              <g key={i}>
+                <line
+                  x1={left}
+                  x2={width - 15}
+                  y1={top + (i * plot) / 4}
+                  y2={top + (i * plot) / 4}
+                  stroke="#e5e5e5"
+                  strokeDasharray="3 3"
                 />
-                {parts.map((part, i) => {
-                  used += part;
-                  return (
-                    <rect
-                      key={i}
-                      x={left + step * index + 4}
-                      y={top + plot - (used / max) * plot}
-                      width={step - 8}
-                      height={(part / max) * plot}
-                      fill={colors[i]}
-                    />
-                  );
-                })}
-                {(index % 5 === 0 || index === days.length - 1) && (
-                  <text
-                    x={left + step * (index + 0.5)}
-                    y={height - 12}
-                    textAnchor="middle"
-                  >
-                    {d.day.slice(5)}
-                  </text>
-                )}
+                <text
+                  x={left - 8}
+                  y={top + (i * plot) / 4 + 4}
+                  textAnchor="end"
+                >
+                  {Math.ceil((max * (4 - i)) / 4)}
+                </text>
               </g>
-            );
-          })}
-        </svg>
-      </div>
-      <div className="dh-chart-detail" aria-live="polite">
-        {point ? (
-          <>
+            ))}
+            {days.map((d, index) => {
+              const parts = [
+                d.sessions - d.serious_sessions,
+                d.serious_sessions,
+              ];
+              const colors = ["#93c5fd", "#f59e0b"];
+              let used = 0;
+              const label = `${date(d.day)}: ${d.sessions} sessions, ${pct(d.sessions - d.serious_sessions, d.sessions)} no friction, ${pct(d.serious_sessions, d.sessions)} with friction, ${d.reviewed_sessions} reviewed.`;
+              return (
+                <g
+                  key={d.day}
+                  tabIndex={0}
+                  role="img"
+                  aria-label={label}
+                  onMouseEnter={() => setActive(index)}
+                  onFocus={() => setActive(index)}
+                  onBlur={() => setActive(null)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setActive(null);
+                  }}
+                >
+                  <rect
+                    x={left + step * index}
+                    y={top}
+                    width={step}
+                    height={plot}
+                    fill={active === index ? "#f5f5f5" : "transparent"}
+                  />
+                  {parts.map((part, i) => {
+                    used += part;
+                    return (
+                      <rect
+                        key={i}
+                        x={left + step * index + 4}
+                        y={top + plot - (used / max) * plot}
+                        width={step - 8}
+                        height={(part / max) * plot}
+                        fill={colors[i]}
+                      />
+                    );
+                  })}
+                  {(index % 5 === 0 || index === days.length - 1) && (
+                    <text
+                      x={left + step * (index + 0.5)}
+                      y={height - 12}
+                      textAnchor="middle"
+                    >
+                      {d.day.slice(5)}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+        {point && (
+          <div className="dh-chart-tooltip" aria-hidden="true">
             <strong>{date(point.day)}</strong>
-            <span>{count(point.sessions)} sessions</span>
-            <span>{pct(point.bug_sessions, point.sessions)} with bugs</span>
-            <span>
-              {pct(point.serious_sessions, point.sessions)} with friction
-            </span>
-            <span>{count(point.reviewed_sessions)} reviewed</span>
-          </>
-        ) : (
-          "Hover or focus a day for session counts and percentages."
+            <div className="dh-chart-tooltip-total">
+              {count(point.sessions)} sessions
+            </div>
+            <div className="dh-chart-tooltip-row">
+              <span>
+                <i className="dh-no-friction" />
+                No friction
+              </span>
+              <b>{count(point.sessions - point.serious_sessions)}</b>
+              <span>
+                {pct(point.sessions - point.serious_sessions, point.sessions)}
+              </span>
+            </div>
+            <div className="dh-chart-tooltip-row">
+              <span>
+                <i className="dh-friction" />
+                Friction
+              </span>
+              <b>{count(point.serious_sessions)}</b>
+              <span>{pct(point.serious_sessions, point.sessions)}</span>
+            </div>
+          </div>
         )}
       </div>
-      <p className="dh-note">
-        Friction blocked user progress. Percentages include all sessions;
-        unreviewed sessions may still contain issues.
-      </p>
       {!days.some((d) => d.sessions) && (
         <p className="dh-state">No sessions received in the last 30 days.</p>
       )}
