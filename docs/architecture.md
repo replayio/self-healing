@@ -75,6 +75,8 @@ The factory schedules polling (suggested every 15 minutes), coordinates one work
 
 ## Optional initial site QA
 
+Self Healing does not set a per-project QA credit budget. Ongoing session reviews and fix verification use QA's uncapped project default, subject to the account's available credits.
+
 Connection creation stores `start_exploration` and forwards it to QA’s project-creation API. New connections default to false; an explicit true opts into initial exploration and smoke-test runs. Session ingestion, reviews, reports and session-driven reproductions remain active in either case. The option is creation-time configuration, not a project pause or restriction on explicitly requested work.
 
 Migration `006_connection_exploration.sql` adds one boolean to existing connection metadata. Existing connections retain true to reflect the old provisioning behavior. Retries with an omitted choice preserve the saved value; an explicitly different choice returns 409 before provider work. Lost creation responses reconcile the original project instead of creating another. Deploy QA’s `start_exploration` support before this Self Healing version; an older QA deployment may ignore the field. No new secrets are required.
