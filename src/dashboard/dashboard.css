@@ -193,19 +193,6 @@
 .dh-friction {
   background: #f59e0b;
 }
-.dh-chart-detail {
-  margin: 10px 24px;
-  padding: 12px;
-  min-height: 44px;
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  background: #fafafa;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 12px;
-  color: #525252;
-}
 .dh-table-scroll {
   overflow-x: auto;
 }

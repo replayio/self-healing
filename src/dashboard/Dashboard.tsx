@@ -200,9 +200,7 @@ const date = (value: string) =>
 const pct = (part: number, total: number) =>
   total ? `${((100 * part) / total).toFixed(1)}%` : "—";
 export function SessionChart({ days }: { days: Overview["days"] }) {
-  const [active, setActive] = useState<number | null>(null);
   const max = Math.max(1, ...days.map((d) => d.sessions));
-  const point = active === null ? undefined : days[active];
   const width = 960,
     height = 250,
     top = 15,
@@ -232,7 +230,7 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
         <svg
           viewBox={`0 0 ${width} ${height}`}
           role="group"
-          aria-label="Daily stacked session counts. Focus a column for counts and percentages."
+          aria-label="Daily stacked session counts by friction."
         >
           {[0, 1, 2, 3, 4].map((i) => (
             <g key={i}>
@@ -255,23 +253,7 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
             let used = 0;
             const label = `${date(d.day)}: ${d.sessions} sessions, ${pct(d.sessions - d.serious_sessions, d.sessions)} no friction, ${pct(d.serious_sessions, d.sessions)} with friction, ${d.reviewed_sessions} reviewed.`;
             return (
-              <g
-                key={d.day}
-                tabIndex={0}
-                role="img"
-                aria-label={label}
-                onFocus={() => setActive(index)}
-                onMouseEnter={() => setActive(index)}
-                onClick={() => setActive(index)}
-              >
-                <title>{label}</title>
-                <rect
-                  x={left + step * index}
-                  y={top}
-                  width={step}
-                  height={plot}
-                  fill={active === index ? "#f5f5f5" : "transparent"}
-                />
+              <g key={d.day} tabIndex={0} role="img" aria-label={label}>
                 {parts.map((part, i) => {
                   used += part;
                   return (
@@ -299,28 +281,6 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
           })}
         </svg>
       </div>
-      <div className="dh-chart-detail" aria-live="polite">
-        {point ? (
-          <>
-            <strong>{date(point.day)}</strong>
-            <span>{count(point.sessions)} sessions</span>
-            <span>
-              {pct(point.sessions - point.serious_sessions, point.sessions)} no
-              friction
-            </span>
-            <span>
-              {pct(point.serious_sessions, point.sessions)} with friction
-            </span>
-            <span>{count(point.reviewed_sessions)} reviewed</span>
-          </>
-        ) : (
-          "Hover or focus a day for session counts and percentages."
-        )}
-      </div>
-      <p className="dh-note">
-        Friction blocked user progress. Percentages include all sessions;
-        unreviewed sessions may still contain issues.
-      </p>
       {!days.some((d) => d.sessions) && (
         <p className="dh-state">No sessions received in the last 30 days.</p>
       )}
