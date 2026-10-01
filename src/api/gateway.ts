@@ -30,6 +30,36 @@ const allowed = new Set([
   "review-snapshot",
   "review-close",
 ]);
+// Error bodies may echo provider credentials. Only expose a bounded JSON error message.
+async function upstreamDiagnostic(response: Response, secrets: string[]) {
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  try {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > 4096) return "";
+      chunks.push(value);
+    }
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    let message = body?.error?.message ?? body?.message ?? body?.error;
+    if (typeof message !== "string") return "";
+    for (const secret of secrets.filter(Boolean)) {
+      for (const value of [secret, encodeURIComponent(secret)])
+        message = message.split(value).join("[redacted]");
+    }
+    return message.replace(/[\r\n\t]/g, " ").slice(0, 512);
+  } catch {
+    return "";
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 export async function gatewayRequest(
   incoming: Request,
   key: string,
@@ -137,14 +167,20 @@ export async function gatewayRequest(
   } catch {
     throw new HttpError(503, "subtext_unavailable", "Subtext did not respond.");
   }
-  if (!response.ok)
+  if (!response.ok) {
+    const diagnostic = await upstreamDiagnostic(response, [
+      key,
+      headers["Mcp-Session-Id"] ?? "",
+      response.headers.get("mcp-session-id") ?? "",
+    ]);
     throw new HttpError(
       [400, 401, 403, 404, 429].includes(response.status)
         ? response.status
         : 503,
       "subtext_unavailable",
-      "Subtext rejected the callback request.",
+      `Subtext ${tool ?? rpc.method} rejected the callback request (HTTP ${response.status}).${diagnostic ? ` ${diagnostic}` : ""}`,
     );
+  }
   const upstream = response.headers.get("mcp-session-id");
   if (upstream)
     await query(
