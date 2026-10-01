@@ -582,6 +582,7 @@ test("base-site exploration defaults off, explicit opt-in persists, and session 
       const created = f.calls.find((c) => c.path === "/api/v1/projects")!
         .body as Record<string, unknown>;
       assert.equal(created.start_exploration, choice ?? false);
+      assert.ok(!("budget" in created), "do not cap ongoing QA processing");
       assert.ok(!("status" in created), "do not pause session processing");
       const reviewers = f.calls.filter(
         (c) =>

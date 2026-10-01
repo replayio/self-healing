@@ -144,7 +144,6 @@ export function connectionService(
                 name,
                 target_url: c.production_url,
                 start_exploration: c.start_exploration,
-                budget: 20,
                 instructions:
                   "Test this application and reproduce user problems from submitted sessions.",
               }),
