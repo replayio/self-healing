@@ -37,6 +37,14 @@ function App() {
   const { theme, setTheme } = useTheme();
   const { path } = useRouter();
 
+  if (path.replace(/\/$/, "") === "/dashboard") {
+    return (
+      <React.Suspense fallback={<p className="dh-state" role="status">Opening dashboard…</p>}>
+        <Dashboard />
+      </React.Suspense>
+    );
+  }
+
   return (
     <Layout theme={theme} setTheme={setTheme}>
       {resolveRoute(path)}
@@ -47,13 +55,7 @@ function App() {
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <RouterProvider>
-      {window.location.pathname.replace(/\/$/, "") === "/dashboard" ? (
-        <React.Suspense fallback={<p role="status">Opening dashboard...</p>}>
-          <Dashboard />
-        </React.Suspense>
-      ) : (
-        <App />
-      )}
+      <App />
     </RouterProvider>
   </React.StrictMode>,
 );

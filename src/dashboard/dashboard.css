@@ -1,29 +1,189 @@
-/* QA's neutral surfaces, compact stat cards, table rows and report disclosure layout. */
-.dh-main {
-  max-width: 1500px;
-  padding: 40px 40px 80px;
+/* ═══════════════════════════════════════════════════════════════════
+   Self Healing Dashboard — presentation layer
+   Consumes the design tokens defined in style.css (:root / html[data-theme='dark']).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── App shell: sticky top bar + tab nav + scrollable main ── */
+#root:has(.dh-app) {
+  padding-left: 0;
 }
+
+.dh-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+
+/* ── Pinned chrome wrapper (header + tabs) ──
+   Sticky rather than fixed: the wrapper keeps its place in the flow, so content below can never
+   start underneath it and no manual top offset has to be kept in sync with the chrome's height. */
+.dh-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Top bar (brand + signout) ── */
+/* Override the global sidebar `header` styles from style.css */
+.dh-topbar {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 32px;
+  background: var(--color-surface);
+  border-right: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dh-topbar .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--color-text-primary);
+}
+.dh-topbar .brand:hover { text-decoration: none; }
+.dh-topbar .brand-icon {
+  width: 24px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.dh-app .dh-signout {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+
+/* ── Tab navigation bar ──
+   The strip takes the page background so the track reads as a pill floating on it, but it has to
+   stay opaque: content scrolls behind the sticky chrome. */
+.dh-tabnav {
+  padding: 16px 32px;
+  background: var(--color-surface-secondary);
+}
+
+.dh-tabnav-track {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  margin: 0 auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 900px;
+}
+.dh-tabnav-track::-webkit-scrollbar {
+  display: none;
+}
+
+.dh-tabnav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1 1 0;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: background .12s, color .12s;
+}
+.dh-tabnav a:hover {
+  text-decoration: none;
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+}
+.dh-tabnav a[aria-current="page"] {
+  background: var(--color-surface-hover);
+  box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px var(--color-border);
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.dh-tabnav a:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+
+/* ── Main content area ── */
+.dh-main {
+  flex: 1;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px 40px 80px;
+}
+
+
+/* ── Back link ── */
+.dh-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  transition: color .12s, background .12s;
+}
+.dh-back:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  text-decoration: none;
+}
+
+
+/* ── Typography ── */
 .dh-app h1 {
   font-size: 26px;
-  letter-spacing: -0.65px;
+  letter-spacing: -.03em;
   line-height: 1.25;
   margin: 0;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--color-text-primary);
 }
 .dh-app h2 {
   font-size: 16px;
   font-weight: 600;
   margin: 0;
-  letter-spacing: -0.2px;
+  letter-spacing: -.02em;
+  color: var(--color-text-primary);
 }
 .dh-app h3 {
   font-size: 15px;
   font-weight: 600;
-  margin: 0 0 12px;
+  margin: 0 0 10px;
+  color: var(--color-text-primary);
 }
 .dh-app p {
   margin: 8px 0;
 }
+
+
+/* ── Title row ── */
 .dh-title-row {
   display: flex;
   align-items: center;
@@ -34,25 +194,33 @@
 .dh-title-row p,
 .dh-panel-heading p,
 .dh-note {
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-size: 13px;
 }
+.dh-title-row h1 {
+  overflow-wrap: anywhere;
+}
+
+
+/* ── Buttons ── */
 .dh-app button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
   padding: 6px 10px;
   font: inherit;
   font-size: 13px;
-  color: var(--text);
+  color: var(--color-text-primary);
   cursor: pointer;
+  transition: background .12s, border-color .12s;
 }
 .dh-app button:hover:not(:disabled) {
-  background: #f5f5f5;
+  background: var(--color-surface-hover);
+  border-color: var(--color-text-muted);
 }
 .dh-app button:disabled {
   opacity: 0.4;
@@ -61,37 +229,59 @@
 .dh-app button:focus-visible,
 .dh-app input:focus-visible,
 .dh-app summary:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--color-brand);
   outline-offset: 3px;
 }
+
 .dh-app .dh-icon-button {
   width: 32px;
   height: 32px;
   padding: 6px;
   flex-shrink: 0;
 }
-.dh-app nav a[aria-current="page"] {
-  background: #f5f5f5;
-  color: var(--text);
-  font-weight: 600;
-}
-.dh-app .dh-signout {
-  margin-top: auto;
-  color: var(--muted);
-  font-size: 12px;
-}
+
+
+/* ── Summary stat cards ── */
 .dh-summary-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
+
+.dh-card {
+  padding: 20px 22px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow .15s;
+}
+.dh-card > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.dh-card strong {
+  font-size: 30px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -1px;
+  display: block;
+  margin-top: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
 .dh-card-breakdown {
   margin: 16px 0 0;
   padding-top: 12px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
   font-size: 13px;
-  color: #525252;
+  color: var(--color-text-secondary);
 }
 .dh-card-breakdown > div {
   display: flex;
@@ -103,41 +293,24 @@
   margin: 0;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
 }
 .dh-card-note {
   margin: 12px 0 0;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
-.dh-card {
-  padding: 18px 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.dh-card > div {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #525252;
-}
-.dh-card strong {
-  font-size: 30px;
-  line-height: 1.3;
-  font-weight: 600;
-  letter-spacing: -1px;
-  display: block;
-  margin-top: 12px;
-  font-variant-numeric: tabular-nums;
-}
+
+
+/* ── Panels (section containers) ── */
 .dh-panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
+
 .dh-panel-heading {
   padding: 20px 24px;
   display: flex;
@@ -146,6 +319,9 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+
+
+/* ── Session activity chart ── */
 .dh-chart {
   padding-bottom: 14px;
 }
@@ -160,17 +336,18 @@
 }
 .dh-chart svg text {
   font-size: 11px;
-  fill: #737373;
+  fill: var(--color-text-muted);
 }
 .dh-chart svg g[tabindex]:focus {
-  outline: 2px solid #a3a3a3;
+  outline: 2px solid var(--color-text-muted);
 }
+
 .dh-legend {
   display: flex;
   gap: 18px;
   flex-wrap: wrap;
   padding: 0 24px 20px;
-  color: #525252;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 .dh-legend span {
@@ -183,408 +360,14 @@
   height: 9px;
   border-radius: 2px;
 }
-.dh-no-friction {
-  background: #93c5fd;
-}
-.dh-friction {
-  background: #f59e0b;
-}
-.dh-table-scroll {
-  overflow-x: auto;
-}
-.dh-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 13px;
-}
-.dh-table th {
-  padding: 10px 24px;
-  background: #fafafa;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-  border-block: 1px solid var(--border);
-}
-.dh-table td {
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
-}
-.dh-table tr:last-child td {
-  border-bottom: 0;
-}
-.dh-table td:first-child {
-  width: 40%;
-  min-width: 240px;
-  font-weight: 500;
-}
-.dh-table td:last-child {
-  white-space: nowrap;
-  color: var(--muted);
-}
-.dh-table tbody tr:hover {
-  background: #fafafa;
-}
-.dh-table a {
-  color: var(--text);
-}
-.dh-table a span {
-  color: #a3a3a3;
-}
-.dh-severity {
-  border: 1px solid #e5e5e5;
-  border-radius: 5px;
-  padding: 2px 7px;
-  font-size: 11px;
-  text-transform: capitalize;
-}
-.dh-severity-critical,
-.dh-severity-high {
-  background: #fff1f2;
-  border-color: #fecdd3;
-  color: #be123c;
-}
-.dh-severity-medium {
-  background: #fffbeb;
-  border-color: #fde68a;
-  color: #a16207;
-}
-.dh-pagination,
-.dh-report-navigation {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-}
-.dh-pagination {
-  justify-content: flex-end;
-  padding: 14px 24px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-}
-.dh-date-label input {
-  font: inherit;
-  border: 1px solid var(--border);
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: #fff;
-  color: var(--text);
-}
-.dh-report-body {
-  padding: 0 24px 24px;
-}
-.dh-report-body > section {
-  margin-top: 24px;
-}
-.dh-prose {
-  white-space: pre-wrap;
-  font-size: 14px;
-  line-height: 1.75;
-  color: #404040;
-}
-.dh-report-status {
-  padding: 0 24px;
-}
-.dh-finding {
-  margin-top: 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px 16px;
-}
-.dh-finding summary {
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.dh-finding > p {
-  margin: 16px 0;
-}
-.dh-state {
-  padding: 40px 24px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 14px;
-}
-.dh-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-@media (max-width: 1100px) {
-  .dh-main {
-    padding: 28px 24px;
-  }
-}
-@media (max-width: 760px) {
-  .dh-summary-cards {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .dh-main {
-    padding: 24px 16px;
-  }
-  .dh-app header {
-    position: static;
-    width: auto;
-    padding: 16px;
-  }
-  .dh-app header .badge {
-    display: none;
-  }
-  .dh-app nav {
-    flex-direction: row;
-  }
-  .dh-app .dh-signout {
-    align-self: flex-start;
-  }
-  .dh-card {
-    padding: 14px;
-  }
-  .dh-panel-heading,
-  .dh-report-body {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-  .dh-report-navigation {
-    gap: 6px;
-  }
-  .dh-table td,
-  .dh-table th {
-    padding: 12px 16px;
-  }
-}
+.dh-no-friction { background: #93c5fd; }
+.dh-friction { background: #f59e0b; }
 
-.dh-fix-prs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow-wrap: anywhere;
+.dh-chart-grid {
+  stroke: var(--color-border);
 }
-.dh-bug-report h2 {
-  font-size: 16px;
-  margin: 0 0 10px;
-}
-.dh-bug-report li {
-  margin-bottom: 12px;
-}
-.dh-title-row h1 {
-  overflow-wrap: anywhere;
-}
-
-.dh-bug-screenshot {
-  display: block;
-  max-width: 100%;
-  max-height: 520px;
-  margin-top: 12px;
-  border: 1px solid #e5e5e5;
-  border-radius: 6px;
-}
-
-.dh-table th {
-  white-space: nowrap;
-}
-.dh-table td:nth-child(2) {
-  min-width: 130px;
-}
-.dh-table td:nth-child(4) {
-  min-width: 180px;
-}
-
-/* QA TabNavigation: a neutral track with a raised active segment. */
-#root:has(.dh-app) {
-  padding-left: 0;
-}
-.dh-app header {
-  position: static;
-  width: auto;
-  padding: 12px 24px 0;
-  flex-direction: row;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  border-right: 0;
-  border-bottom: 1px solid var(--border);
-}
-.dh-app header .badge {
-  display: none;
-}
-.dh-app header nav {
-  order: 3;
-  flex-basis: 100%;
-  flex-direction: row;
-  gap: 4px;
-  padding: 3px;
-  margin-bottom: 12px;
-  background: var(--canvas);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow-x: auto;
-}
-.dh-app nav a {
-  border-radius: 6px;
-  flex: 1 1 0;
-  justify-content: center;
-  padding: 6px 14px;
-  font-size: 13.5px;
-  gap: 8px;
-  white-space: nowrap;
-  color: var(--muted);
-}
-.dh-app nav a[aria-current="page"] {
-  background: var(--surface);
-  box-shadow:
-    0 1px 2px #00000014,
-    0 0 0 1px var(--border);
-  color: var(--text);
-}
-.dh-app .dh-signout {
-  margin: 0 0 0 auto;
-}
-.dh-session-timeline {
-  list-style: none;
-  padding: 0;
-}
-.dh-session-interaction {
-  padding: 20px 0;
-  border-bottom: 1px solid var(--border);
-  min-height: 140px;
-  overflow-wrap: anywhere;
-}
-.dh-session-screenshot {
-  display: block;
-  max-width: 100%;
-  max-height: 600px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin: 12px 0;
-}
-@media (max-width: 760px) {
-  .dh-summary-cards {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .dh-app header {
-    padding: 12px 16px 0;
-  }
-  .dh-app header nav {
-    gap: 4px;
-  }
-  .dh-app header nav a {
-    padding: 6px;
-    font-size: 12px;
-    gap: 4px;
-  }
-  .dh-app .dh-signout {
-    font-size: 11px;
-  }
-  .dh-panel-heading {
-    flex-wrap: wrap;
-  }
-}
-
-.dh-app nav a:hover {
-  text-decoration: none;
-  color: var(--text);
-}
-
-/* QA evidence cards keep tool params and results behind compact disclosure rows. */
-.dh-evidence {
-  margin: 12px 0;
-  white-space: normal;
-}
-.dh-evidence-label {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-.dh-evidence-label > span {
-  margin-left: 6px;
-  border: 1px solid var(--border);
-  padding: 0 5px;
-  border-radius: 4px;
-}
-.dh-evidence-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-top: 6px;
-  overflow: hidden;
-}
-.dh-app .dh-evidence-toggle {
-  width: 100%;
-  justify-content: flex-start;
-  text-align: left;
-  border: 0;
-  border-radius: 0;
-  padding: 10px 12px;
-  background: var(--canvas);
-}
-.dh-evidence-tool {
-  flex-shrink: 0;
-  font-weight: 500;
-}
-.dh-evidence-preview {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: 12px;
-}
-.dh-evidence-chevron {
-  margin-left: auto;
-  display: flex;
-  flex-shrink: 0;
-}
-.dh-evidence-chevron.open {
-  transform: rotate(90deg);
-}
-.dh-evidence-body {
-  padding: 12px;
-  border-top: 1px solid var(--border);
-}
-.dh-evidence-body pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  line-height: 1.6;
-  margin: 6px 0 14px;
-}
-.dh-evidence-body pre:last-child {
-  margin-bottom: 0;
-}
-
-.dh-error-details {
-  margin: 20px auto;
-  max-width: 560px;
-  text-align: left;
-  padding: 12px 16px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow-wrap: anywhere;
-}
-.dh-error-details summary {
-  cursor: pointer;
-  color: var(--text);
-}
-
-.dh-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-.dh-tabs button {
-  padding: 8px 14px;
-  border: 1px solid #d8ded8;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.dh-tabs button[aria-pressed="true"] {
-  background: #e8eee5;
-  font-weight: 600;
+.dh-chart-hover {
+  fill: var(--color-surface-hover);
 }
 
 .dh-chart-plot {
@@ -596,22 +379,22 @@
   right: 24px;
   width: 250px;
   padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 4px 16px #00000014;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
   pointer-events: none;
   font-size: 12px;
-  color: #525252;
+  color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .dh-chart-tooltip strong {
-  color: #171717;
+  color: var(--color-text-primary);
   font-size: 13px;
 }
 .dh-chart-tooltip-total {
   margin: 4px 0 12px;
-  color: #737373;
+  color: var(--color-text-muted);
 }
 .dh-chart-tooltip-row {
   display: grid;
@@ -632,4 +415,398 @@
   width: 8px;
   height: 8px;
   border-radius: 2px;
+}
+
+
+/* ── Tables ── */
+.dh-table-scroll {
+  overflow-x: auto;
+}
+.dh-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+.dh-table th {
+  padding: 10px 24px;
+  background: var(--color-surface-secondary);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  border-block: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.dh-table td {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+.dh-table tr:last-child td {
+  border-bottom: 0;
+}
+.dh-table td:first-child {
+  width: 40%;
+  min-width: 240px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.dh-table td:last-child {
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+.dh-table td:nth-child(2) {
+  min-width: 130px;
+}
+.dh-table td:nth-child(4) {
+  min-width: 180px;
+}
+.dh-table tbody tr:hover {
+  background: var(--color-surface-hover);
+}
+.dh-table a {
+  color: var(--color-text-primary);
+}
+.dh-table a span {
+  color: var(--color-text-muted);
+}
+
+.dh-severity {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.dh-severity-critical,
+.dh-severity-high {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+.dh-severity-medium {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #a16207;
+}
+
+html[data-theme='dark'] .dh-severity-critical,
+html[data-theme='dark'] .dh-severity-high {
+  background: rgba(190, 18, 60, 0.15);
+  border-color: rgba(190, 18, 60, 0.35);
+  color: #fb7185;
+}
+html[data-theme='dark'] .dh-severity-medium {
+  background: rgba(161, 98, 7, 0.15);
+  border-color: rgba(161, 98, 7, 0.35);
+  color: #fbbf24;
+}
+
+
+/* ── Pagination & report navigation ── */
+.dh-pagination,
+.dh-report-navigation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.dh-pagination {
+  justify-content: flex-end;
+  padding: 14px 24px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.dh-date-label input {
+  font: inherit;
+  border: 1px solid var(--color-border);
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+
+/* ── Report body / prose ── */
+.dh-report-body {
+  padding: 0 24px 24px;
+}
+.dh-report-body > section {
+  margin-top: 28px;
+}
+.dh-report-body > section > h3 {
+  margin-bottom: 12px;
+}
+.dh-prose {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--color-text-secondary);
+}
+.dh-report-status {
+  padding: 0 24px;
+}
+
+
+/* ── Findings (disclosure rows in reports) ── */
+.dh-finding {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  transition: border-color .12s;
+}
+.dh-finding:hover {
+  border-color: var(--color-text-muted);
+}
+.dh-finding summary {
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+.dh-finding > p {
+  margin: 16px 0;
+}
+
+
+/* ── Bug status tabs (open / closed toggle) ── */
+.dh-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.dh-tabs button {
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.dh-tabs button:hover:not([aria-pressed="true"]) {
+  background: var(--color-surface-hover);
+}
+.dh-tabs button[aria-pressed="true"] {
+  background: var(--color-surface-hover);
+  border-color: var(--color-text-muted);
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+
+/* ── Loading / empty states ── */
+.dh-state {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+
+/* ── Bug detail pages ── */
+.dh-bug-report h2 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+.dh-bug-report li {
+  margin-bottom: 12px;
+}
+.dh-bug-screenshot {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  margin-top: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.dh-fix-prs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.dh-fix-prs a {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.dh-fix-prs a:hover {
+  color: var(--color-text-primary);
+}
+
+
+/* ── Session detail (timeline) ── */
+.dh-session-timeline {
+  list-style: none;
+  padding: 0;
+}
+.dh-session-interaction {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--color-border);
+  min-height: 140px;
+  overflow-wrap: anywhere;
+}
+.dh-session-screenshot {
+  display: block;
+  max-width: 100%;
+  max-height: 600px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin: 12px 0;
+}
+
+
+/* ── Evidence cards ── */
+.dh-evidence {
+  margin: 12px 0;
+  white-space: normal;
+}
+.dh-evidence-label {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.dh-evidence-label > span {
+  margin-left: 6px;
+  border: 1px solid var(--color-border);
+  padding: 0 5px;
+  border-radius: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.dh-evidence-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-top: 6px;
+  overflow: hidden;
+}
+.dh-app .dh-evidence-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 12px;
+  background: var(--color-surface-secondary);
+}
+.dh-evidence-tool {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.dh-evidence-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+.dh-evidence-chevron {
+  margin-left: auto;
+  display: flex;
+  flex-shrink: 0;
+  transition: transform .12s;
+}
+.dh-evidence-chevron.open {
+  transform: rotate(90deg);
+}
+.dh-evidence-body {
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.dh-evidence-body pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 6px 0 14px;
+  color: var(--color-text-secondary);
+}
+.dh-evidence-body pre:last-child {
+  margin-bottom: 0;
+}
+
+
+/* ── Error details (opening failure) ── */
+.dh-error-details {
+  margin: 20px auto;
+  max-width: 560px;
+  text-align: left;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.dh-error-details summary {
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+
+
+/* ── Screenreader-only ── */
+.dh-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .dh-main {
+    padding: 28px 24px 64px;
+  }
+}
+
+@media (max-width: 760px) {
+  .dh-summary-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dh-main {
+    padding: 24px 16px 64px;
+  }
+  .dh-topbar {
+    padding: 10px 16px;
+  }
+  .dh-tabnav {
+    padding: 12px 16px;
+  }
+  .dh-tabnav a {
+    padding: 6px;
+    font-size: 12px;
+    gap: 4px;
+  }
+  .dh-app .dh-signout {
+    font-size: 11px;
+  }
+  .dh-panel-heading {
+    flex-wrap: wrap;
+  }
+  .dh-panel-heading,
+  .dh-report-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .dh-report-navigation {
+    gap: 6px;
+  }
+  .dh-table td,
+  .dh-table th {
+    padding: 12px 16px;
+  }
+  .dh-card {
+    padding: 14px;
+  }
 }
