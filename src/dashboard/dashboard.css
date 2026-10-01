@@ -34,6 +34,7 @@
   width: 100%;
   display: flex;
   flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -59,10 +60,54 @@
   flex-shrink: 0;
 }
 
+.dh-topbar-lead,
+.dh-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The brand also links home, but the way out of a session needs to be obvious. Icon-only at every
+   width so the bar reads the same on a phone as it does on a desktop; the name lives on aria-label. */
+.dh-exit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: background .12s, color .12s;
+}
+.dh-exit:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+/* The toggle is a full-width sidebar row by default; in this bar it is a compact control. */
+.dh-topbar-actions .theme-toggle {
+  width: auto;
+  flex-shrink: 0;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 .dh-app .dh-signout {
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
+}
+/* Two whole labels rather than one with a removable word: the button is a flex row, so splitting it
+   into fragments would space them apart. `display: none` keeps the unused one out of the a11y name. */
+.dh-signout-short {
+  display: none;
 }
 
 
@@ -790,6 +835,28 @@ html[data-theme='dark'] .dh-severity-medium {
   }
   .dh-app .dh-signout {
     font-size: 11px;
+  }
+  /* A phone cannot fit both remaining labels, so the theme toggle falls back to its icon and the
+     session button swaps in its shorter wording. */
+  .dh-signout-long {
+    display: none;
+  }
+  .dh-signout-short {
+    display: inline;
+  }
+  .dh-topbar-actions .theme-toggle span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .dh-topbar-actions .theme-toggle {
+    padding: 7px 9px;
+  }
+  .dh-topbar .brand {
+    min-width: 0;
   }
   .dh-panel-heading {
     flex-wrap: wrap;
