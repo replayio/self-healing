@@ -406,105 +406,98 @@ const sampleBug = (
   status = "open",
   discovered_at = "2026-09-29T10:00:00Z",
 ) => ({ id, status, discovered_at, title: `Bug ${id}`, severity: "high" });
-const run = (
-  id: string,
-  bugs: { id: string; status: string }[] = [],
-  impact?: string,
-) => ({
-  session_id: id,
-  context: { bugs },
-  output: {
-    observations: impact
-      ? [
-          { code: "failure", attributes: { impact } },
-          { code: "failure", attributes: { impact } },
-        ]
-      : [],
-  },
-});
-test("overview follows QA pagination, deduplicates sessions and overlaps, and counts UTC days and current bug states", async () => {
-  const paths: string[] = [];
-  const request = async (path: string) => {
-    paths.push(path);
-    const url = new URL(path, "https://qa.example"),
-      p = url.searchParams;
-    assert.equal(p.get("project_id"), "qa-one");
-    if (url.pathname === "/api/bugs") {
-      assert.equal(p.get("status"), "all");
-      return p.get("page") === "1"
-        ? {
-            total: 107,
-            resolvedCount: 1,
-            items: Array.from({ length: 100 }, (_, i) =>
-              sampleBug(String(i), i === 1 ? "reopened" : "open"),
-            ),
-          }
-        : {
-            total: 107,
-            resolvedCount: 1,
-            items: [
-              sampleBug("old", "open", "2026-09-01T00:00:00Z"),
-              sampleBug("fixed-1", "fixed"),
-              sampleBug("fixed-2", "fixed"),
-              sampleBug("wontfix", "wontfix"),
-              sampleBug("invalid", "invalid"),
-              sampleBug("pr-closed", "pr-closed"),
-              sampleBug("unconfirmed", "judge-rejected"),
-            ],
-          };
-    }
-    if (p.get("summary"))
-      return {
-        reviewers: [
-          { key: "friction-and-recovery" },
-          { key: "goals-and-outcomes" },
-        ],
-      };
-    if (p.get("sessions")) {
-      const query = JSON.parse(p.get("query")!);
-      assert.equal(query.from, "2026-08-31T00:00:00.000Z");
-      return {
-        has_more: query.page === 0,
-        sessions:
-          query.page === 0
-            ? [
-                { session_id: "a", first_received_at: "2026-09-29T01:00:00Z" },
-                { session_id: "b", first_received_at: "2026-09-29T02:00:00Z" },
-              ]
-            : [
-                { session_id: "a", first_received_at: "2026-09-29T01:00:00Z" },
-                {
-                  session_id: "c",
-                  first_received_at: "2026-09-29T00:00:00+03:00",
-                },
-              ],
-      };
-    }
-    if (!p.get("filter")) return { totals: { total_sessions: 105 } };
-    return {
-      totals: { total_sessions: 3 },
-      deleted_codes: [],
-      has_more:
-        p.get("reviewer") === "friction-and-recovery" && p.get("page") === "0",
-      runs:
-        p.get("reviewer") === "friction-and-recovery"
-          ? p.get("page") === "0"
-            ? [run("a", [{ id: "0", status: "open" }], "blocked")]
-            : [
-                run("b", [], "delayed"),
-                run(
-                  "c",
-                  [{ id: "unconfirmed", status: "judge-rejected" }],
-                  "blocked",
-                ),
-              ]
-          : [
-              run("a", [{ id: "0", status: "open" }]),
-              run("b", [{ id: "old", status: "fixed" }]),
-            ],
-    };
+const aggregateCounts = {
+  sessions: 0,
+  reviewed_sessions: 0,
+  sessions_with_bugs: 0,
+  sessions_with_observations: 0,
+  sessions_with_both: 0,
+};
+function overviewAggregates(at = now) {
+  const today = new Date(at);
+  today.setUTCHours(0, 0, 0, 0);
+  const first = +today - 29 * 86400000;
+  return {
+    bugs: {
+      project_id: "qa-one",
+      statuses: [
+        { status: "open", total: 100, in_period: 99 },
+        { status: "reopened", total: 1, in_period: 1 },
+        { status: "fixed", total: 2, in_period: 1 },
+        { status: "wontfix", total: 1, in_period: 0 },
+        { status: "invalid", total: 1, in_period: 1 },
+        { status: "pr-closed", total: 1, in_period: 1 },
+        { status: "judge-rejected", total: 20, in_period: 20 },
+        { status: "unknown-future-status", total: 30, in_period: 30 },
+      ],
+    },
+    chart: {
+      project_id: "qa-one",
+      all_time_sessions: 105,
+      totals: { ...aggregateCounts },
+      series: Array.from({ length: at === +today ? 29 : 30 }, (_, index) => ({
+        start: new Date(first + index * 86400000).toISOString(),
+        ...aggregateCounts,
+      })),
+    },
+    recent: {
+      project_id: "qa-one",
+      all_time_sessions: 105,
+      totals: { ...aggregateCounts },
+      series: [],
+    },
   };
-  const result = await dashboardData(request, now).overview(connection);
+}
+function aggregateResult(
+  path: string,
+  fixture: ReturnType<typeof overviewAggregates>,
+) {
+  const url = new URL(path, "https://qa.example");
+  assert.equal(url.searchParams.get("project_id"), "qa-one");
+  const query = JSON.parse(url.searchParams.get("query")!);
+  if (url.pathname === "/api/project-aggregates/bugs") return fixture.bugs;
+  assert.equal(
+    url.pathname,
+    "/api/project-aggregates/sessions",
+    "overview must not fetch individual records",
+  );
+  return query.bucket ? fixture.chart : fixture.recent;
+}
+
+test("overview uses three concurrent aggregate reads and preserves status and daily count mappings", async () => {
+  const fixture = overviewAggregates();
+  Object.assign(fixture.chart.series.at(-1)!, {
+    sessions: 2,
+    reviewed_sessions: 2,
+    sessions_with_bugs: 2,
+    sessions_with_observations: 1,
+    sessions_with_both: 1,
+  });
+  Object.assign(fixture.chart.series.at(-2)!, {
+    sessions: 1,
+    reviewed_sessions: 1,
+    sessions_with_observations: 1,
+  });
+  Object.assign(fixture.recent.totals, {
+    sessions: 3,
+    sessions_with_observations: 2,
+  });
+  const paths: string[] = [];
+  const release: (() => void)[] = [];
+  const pending = dashboardData((path) => {
+    paths.push(path);
+    return new Promise((resolve) =>
+      release.push(() => resolve(aggregateResult(path, fixture))),
+    );
+  }, now).overview(connection);
+  assert.equal(
+    paths.length,
+    3,
+    "all requests start before any response arrives",
+  );
+  release.forEach((resolve) => resolve());
+  const result = await pending;
+  assert.equal(paths.length, 3, "no pagination or per-reviewer fan-out");
   assert.equal(result.sessions, 105);
   assert.equal(result.open_bugs, 101);
   assert.equal(result.closed_bugs, 5);
@@ -512,6 +505,8 @@ test("overview follows QA pagination, deduplicates sessions and overlaps, and co
   assert.equal(result.wontfix_bugs, 1);
   assert.equal(result.invalid_bugs, 1);
   assert.equal(result.new_open_bugs, 100);
+  assert.equal(result.sessions_24h, 3);
+  assert.equal(result.serious_sessions_24h, 2);
   assert.equal(result.days.length, 30);
   assert.deepEqual(result.days.at(-1), {
     day: "2026-09-29",
@@ -529,61 +524,157 @@ test("overview follows QA pagination, deduplicates sessions and overlaps, and co
     serious_sessions: 1,
     both_sessions: 0,
   });
-  assert.equal(paths.filter((p) => p.startsWith("/api/bugs")).length, 2);
+  for (const path of paths) {
+    const url = new URL(path, "https://qa.example");
+    const query = JSON.parse(url.searchParams.get("query")!);
+    assert.equal(query.to, "2026-09-29T12:00:00.000Z");
+    assert.equal(
+      query.from,
+      query.bucket ? "2026-08-31T00:00:00.000Z" : "2026-09-28T12:00:00.000Z",
+    );
+    if (url.pathname.endsWith("/sessions")) {
+      assert.deepEqual(query.observation, {
+        reviewer: "friction-and-recovery",
+        attributes: { impact: "blocked" },
+      });
+      assert.deepEqual(query.exclude_bug_statuses, [
+        "judge-rejected",
+        "invalid",
+      ]);
+      if (query.bucket) assert.equal(query.bucket, "day");
+    } else {
+      assert.deepEqual(Object.keys(query).sort(), ["from", "to"]);
+    }
+  }
 });
 
-test("overview uses an exact rolling 24-hour window and the graph's serious-error definition", async () => {
-  for (const empty of [false, true]) {
-    const result = await dashboardData(async (path) => {
-      const url = new URL(path, "https://qa.example");
-      const p = url.searchParams;
-      assert.equal(p.get("project_id"), "qa-one");
-      if (url.pathname === "/api/bugs") return { items: [], total: 0 };
-      if (p.get("summary"))
-        return {
-          reviewers: [{ key: "friction-and-recovery" }, { key: "other" }],
-        };
-      if (p.get("sessions"))
-        return {
-          has_more: false,
-          sessions: empty
-            ? []
-            : [
-                ["boundary", "2026-09-28T12:00:00Z"],
-                ["old", "2026-09-28T11:59:59.999Z"],
-                ["future", "2026-09-29T12:00:00.001Z"],
-                ["now", "2026-09-29T12:00:00Z"],
-                ["unreviewed", "2026-09-29T01:00:00Z"],
-                ["deleted", "2026-09-29T02:00:00Z"],
-                ["boundary", "2026-09-28T12:00:00Z"],
-              ].map(([session_id, first_received_at]) => ({
-                session_id,
-                first_received_at,
-              })),
-        };
-      if (!p.get("filter")) return { totals: { total_sessions: 100 } };
-      const deleted = run("deleted", [], "blocked");
-      deleted.output.observations.forEach((o) => {
-        o.code = "removed";
-      });
-      return {
-        totals: { total_sessions: 6 },
-        has_more: false,
-        deleted_codes: ["removed"],
-        runs:
-          p.get("reviewer") === "friction-and-recovery"
-            ? [
-                run("boundary", [], "blocked"),
-                run("old", [], "blocked"),
-                run("future", [], "blocked"),
-                run("now", [], "delayed"),
-                deleted,
-              ]
-            : [run("now", [], "blocked")],
-      };
-    }, now).overview(connection);
-    assert.equal(result.sessions_24h, empty ? 0 : 4);
-    assert.equal(result.serious_sessions_24h, empty ? 0 : 1);
+test("overview uses exact rolling totals independently of daily buckets and keeps empty UTC dates at midnight", async () => {
+  for (const at of [now, Date.parse("2026-10-01T00:00:00Z")]) {
+    const fixture = overviewAggregates(at);
+    fixture.bugs.statuses = [];
+    fixture.chart.all_time_sessions = 0;
+    fixture.recent.all_time_sessions = 0;
+    const empty = await dashboardData(
+      async (path) => aggregateResult(path, fixture),
+      at,
+    ).overview(connection);
+    assert.equal(empty.open_bugs, 0);
+    assert.equal(empty.closed_bugs, 0);
+    assert.equal(empty.sessions, 0);
+    assert.equal(empty.sessions_24h, 0);
+    assert.equal(empty.serious_sessions_24h, 0);
+    assert.equal(empty.days.length, 30);
+    assert.equal(
+      empty.days.at(-1)?.day,
+      new Date(at).toISOString().slice(0, 10),
+    );
+    assert.ok(
+      empty.days.every(
+        (day) => day.sessions === 0 && day.serious_sessions === 0,
+      ),
+    );
+    if (at !== now) assert.equal(empty.days[0]?.day, "2026-09-02");
+    // A rolling interval is not a sum of the last two UTC buckets.
+    fixture.chart.all_time_sessions = 200;
+    fixture.chart.series.at(-1)!.sessions = 100;
+    fixture.recent.totals.sessions = 4;
+    fixture.recent.totals.sessions_with_observations = 1;
+    const result = await dashboardData(
+      async (path) => aggregateResult(path, fixture),
+      at,
+    ).overview(connection);
+    assert.equal(result.sessions, 200);
+    assert.equal(result.sessions_24h, 4);
+    assert.equal(result.serious_sessions_24h, 1);
+    if (at !== now) assert.equal(result.days.at(-1)?.sessions, 0);
+  }
+});
+
+test("overview rejects malformed, incomplete, or cross-project aggregates instead of returning partial counts", async () => {
+  const corruptions: ((
+    fixture: ReturnType<typeof overviewAggregates>,
+  ) => void)[] = [
+    (fixture) => {
+      fixture.bugs.project_id = "other";
+    },
+    (fixture) => {
+      fixture.chart.project_id = "other";
+    },
+    (fixture) => {
+      fixture.recent.project_id = "other";
+    },
+    (fixture) => {
+      fixture.bugs.statuses[0]!.total = -1;
+    },
+    (fixture) => {
+      fixture.recent.totals.sessions = -1;
+    },
+    (fixture) => {
+      fixture.chart.series.pop();
+    },
+    (fixture) => {
+      fixture.chart.series[1]!.start = fixture.chart.series[0]!.start;
+    },
+    (fixture) => {
+      fixture.chart.series[0]!.start = "2026-08-31T01:00:00Z";
+    },
+  ];
+  for (const corrupt of corruptions) {
+    const fixture = overviewAggregates();
+    corrupt(fixture);
+    await assert.rejects(
+      dashboardData(
+        async (path) => aggregateResult(path, fixture),
+        now,
+      ).overview(connection),
+      (error: unknown) =>
+        error instanceof HttpError &&
+        error.status === 503 &&
+        error.code === "qa_contract_changed" &&
+        error.diagnostics.source === "qa_dashboard",
+    );
+  }
+});
+
+test("overview aggregate requests use the dedicated QA credential and never fall back after upstream failure", async () => {
+  const fixture = overviewAggregates();
+  let calls = 0;
+  const qa = qaClient(
+    {
+      REPLAY_QA_API_TOKEN: "qa-dedicated",
+      REPLAY_QA_URL: "https://qa.example",
+    },
+    async (url, init) => {
+      calls++;
+      assert.equal(
+        new Headers(init?.headers).get("authorization"),
+        "Bearer qa-dedicated",
+      );
+      return Response.json(aggregateResult(String(url), fixture));
+    },
+  );
+  await dashboardData(qa, now).overview(connection);
+  assert.equal(calls, 3);
+  for (const status of [404, 503]) {
+    calls = 0;
+    const failing = qaClient(
+      {
+        REPLAY_QA_API_TOKEN: "qa-dedicated",
+        REPLAY_QA_URL: "https://qa.example",
+      },
+      async () => {
+        calls++;
+        return Response.json({ error: "Unavailable" }, { status });
+      },
+    );
+    await assert.rejects(
+      dashboardData(failing, now).overview(connection),
+      (error: unknown) =>
+        error instanceof QARequestError &&
+        error.status === 503 &&
+        error.upstreamStatus === status,
+    );
+    assert.equal(calls, 3);
   }
 });
 
