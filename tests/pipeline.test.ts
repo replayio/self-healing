@@ -556,3 +556,75 @@ test("OpenAPI identifies required bug IDs and the skill's operations are impleme
     );
   }
 });
+
+test("unnamed QA evidence remains readable and does not block preview verification", async () => {
+  const f = fixture();
+  const unnamed = {
+    params: { expression: "total" },
+    result: "Observed result",
+  };
+  const screenshot = {
+    tool: "Screenshot",
+    result:
+      "https://static.replay.io/recordings/recording-1/analysis/screenshot-100.jpg",
+  };
+  // Match both paths captured for bug-muojitzp-iu36 in production diagnostics.
+  Object.assign(f.bug, {
+    analysis: {
+      root_cause: { text: "Cause", evidence: [unnamed] },
+      chain: [{ text: "First" }, { text: "Second", evidence: [unnamed] }],
+      chronology: [
+        { text: "First" },
+        { text: "Second", evidence: [screenshot, unnamed] },
+      ],
+    },
+  });
+  const report = await f.data.bug(connection, "bug-1");
+  const normalized = { tool: "Evidence", ...unnamed };
+  assert.deepEqual(report.analysis?.root_cause?.evidence, [normalized]);
+  assert.deepEqual(report.analysis?.chain?.[1]?.evidence, [normalized]);
+  assert.deepEqual(report.analysis?.chronology?.[1]?.evidence, [
+    screenshot,
+    normalized,
+  ]);
+  assert.equal(
+    report.analysis?.chronology?.[1]?.screenshot_url,
+    screenshot.result,
+  );
+  assert.equal(report.status, "open");
+  const run = await f.data.verify(connection, input);
+  assert.equal(run.bug_id, "bug-1");
+  assert.equal(run.head_sha, input.head_sha);
+  assert.equal(f.runs.length, 1);
+  assert.ok(
+    f.calls.some(
+      (call) => call.path === "/api/test-runs" && call.method === "POST",
+    ),
+  );
+});
+
+test("invalid evidence tool types still fail validation before creating a verification run", async () => {
+  for (const tool of [null, 42, {}]) {
+    const f = fixture();
+    Object.assign(f.bug, {
+      analysis: { chain: [{ text: "Cause", evidence: [{ tool }] }] },
+    });
+    await assert.rejects(
+      f.data.verify(connection, input),
+      (error: HttpError) => {
+        assert.equal(error.code, "qa_contract_changed");
+        assert.deepEqual(error.diagnostics.issues?.[0]?.path, [
+          "analysis",
+          "chain",
+          0,
+          "evidence",
+          0,
+          "tool",
+        ]);
+        return true;
+      },
+    );
+    assert.equal(f.runs.length, 0);
+    assert.equal(f.links.size, 0);
+  }
+});

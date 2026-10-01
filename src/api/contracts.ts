@@ -490,7 +490,8 @@ export const DashboardBug = z.object({
   ),
 });
 export const DashboardEvidence = z.object({
-  tool: z.string(),
+  // QA can emit evidence without a tool name. Preserve it under a generic label.
+  tool: z.string().default("Evidence"),
   params: z.record(z.unknown()).optional(),
   result: z.string().nullish(),
 });
