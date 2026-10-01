@@ -220,20 +220,12 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
       </div>
       <div className="dh-legend">
         <span>
-          <i className="dh-no-issue" />
-          No detected issue
+          <i className="dh-no-friction" />
+          No friction
         </span>
         <span>
-          <i className="dh-serious" />
-          Serious issue only
-        </span>
-        <span>
-          <i className="dh-bug" />
-          Bug only
-        </span>
-        <span>
-          <i className="dh-both" />
-          Bug & serious issue
+          <i className="dh-friction" />
+          Friction
         </span>
       </div>
       <div className="dh-chart-scroll">
@@ -258,18 +250,10 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
             </g>
           ))}
           {days.map((d, index) => {
-            const parts = [
-              d.sessions -
-                d.bug_sessions -
-                d.serious_sessions +
-                d.both_sessions,
-              d.serious_sessions - d.both_sessions,
-              d.bug_sessions - d.both_sessions,
-              d.both_sessions,
-            ];
-            const colors = ["#93c5fd", "#f59e0b", "#f02d5e", "#7c3aed"];
+            const parts = [d.sessions - d.serious_sessions, d.serious_sessions];
+            const colors = ["#93c5fd", "#f59e0b"];
             let used = 0;
-            const label = `${date(d.day)}: ${d.sessions} sessions, ${pct(d.bug_sessions, d.sessions)} with bugs, ${pct(d.serious_sessions, d.sessions)} with friction, ${d.reviewed_sessions} reviewed.`;
+            const label = `${date(d.day)}: ${d.sessions} sessions, ${pct(d.sessions - d.serious_sessions, d.sessions)} no friction, ${pct(d.serious_sessions, d.sessions)} with friction, ${d.reviewed_sessions} reviewed.`;
             return (
               <g
                 key={d.day}
@@ -320,7 +304,10 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
           <>
             <strong>{date(point.day)}</strong>
             <span>{count(point.sessions)} sessions</span>
-            <span>{pct(point.bug_sessions, point.sessions)} with bugs</span>
+            <span>
+              {pct(point.sessions - point.serious_sessions, point.sessions)} no
+              friction
+            </span>
             <span>
               {pct(point.serious_sessions, point.sessions)} with friction
             </span>

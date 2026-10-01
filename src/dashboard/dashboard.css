@@ -187,17 +187,11 @@
   height: 9px;
   border-radius: 2px;
 }
-.dh-no-issue {
+.dh-no-friction {
   background: #93c5fd;
 }
-.dh-serious {
+.dh-friction {
   background: #f59e0b;
-}
-.dh-bug {
-  background: #f02d5e;
-}
-.dh-both {
-  background: #7c3aed;
 }
 .dh-chart-detail {
   margin: 10px 24px;
