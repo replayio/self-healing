@@ -83,6 +83,9 @@ export function Layout({
           aria-label="Main navigation"
           data-open={menuOpen || undefined}
         >
+          <Link to="/" className="nav-home">
+            <span aria-hidden="true">⌂</span> Home
+          </Link>
           <Link to="/setup">
             <span aria-hidden="true">＋</span> Setup
           </Link>
