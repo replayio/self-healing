@@ -1,3 +1,4 @@
+import { getServiceErrorStore } from "./service-errors.ts";
 import { getFixPrStore } from "./fix-prs.ts";
 import { dashboardSessions } from "./dashboard-sessions.ts";
 import {
@@ -76,6 +77,7 @@ async function readBody(request: Request): Promise<unknown> {
 export function createHandler(
   dependencies: {
     store?: () => Store;
+    serviceErrors?: typeof getServiceErrorStore;
     authenticate?: Authenticator;
     connections?: typeof getConnectionService;
     accounts?: typeof getAccountService;
@@ -88,6 +90,9 @@ export function createHandler(
 ) {
   return async (request: Request): Promise<Response> => {
     const requestId = randomUUID();
+    let errorAccount: string | null = null;
+    let errorOperation = "unmatched";
+    let errorBug: string | null = null;
     const headers: Record<string, string> = {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
@@ -112,6 +117,7 @@ export function createHandler(
           path,
         );
       if (gateway) {
+        errorOperation = "sessionGateway";
         if (request.method !== "POST")
           throw new HttpError(405, "method_not_allowed", "Use POST.");
         return await (
@@ -143,6 +149,7 @@ export function createHandler(
         );
       }
       const { operation, match } = route;
+      errorOperation = operation.id;
       if (operation.id === "health")
         return json({ status: "ok", version: "0.1.0", stage: "scaffold" });
       if (operation.id === "discoverApi")
@@ -221,6 +228,7 @@ export function createHandler(
                   req,
                 )))
       )(request);
+      errorAccount = account;
       const pathNames = [...operation.path.matchAll(/\{([^}]+)\}/g)].map(
         (m) => m[1]!,
       );
@@ -236,6 +244,9 @@ export function createHandler(
       const body = operation.body
         ? operation.body.parse(await readBody(request))
         : undefined;
+      // Only retain the validated bug identifier, never request bodies or URLs.
+      const bugContext = (body ?? query ?? {}) as { bug_id?: string };
+      errorBug = pathValues.bug_id ?? bugContext.bug_id ?? null;
       if (operation.id === "createDashboardSession") {
         const connection = await (
           dependencies.connections ?? getConnectionService
@@ -486,6 +497,25 @@ export function createHandler(
                 "internal_error",
                 "An unexpected error occurred.",
               );
+      if (failure.status >= 500 && failure.status !== 501) {
+        const record = {
+          request_id: requestId,
+          account_id: errorAccount,
+          operation: errorOperation,
+          status: failure.status,
+          code: failure.code,
+          bug_id: errorBug,
+          diagnostics: failure.diagnostics,
+        };
+        try {
+          await (dependencies.serviceErrors ?? getServiceErrorStore)().record(
+            record,
+          );
+        } catch {
+          // Database outages must not replace the original error or leak SQL/credentials.
+          console.error("service_error_persistence_failed", record);
+        }
+      }
       if (failure.status === 401) headers["WWW-Authenticate"] = "Bearer";
       return json(
         {

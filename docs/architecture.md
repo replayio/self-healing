@@ -55,7 +55,7 @@ Long-running provider work belongs in a durable queue/worker, not a Netlify requ
 
 ## Remaining production work
 
-This setup has QA and Subtext adapters, but no automatic session discovery, Self Healing background retry worker, automatic GitHub PR creation, account self-service, rate limiting, or production observability. The factory owns PR authoring, so automatic PR creation is not required inside this service. The Netlify site and Neon database are provisioned. The Infisical/GitHub machine-identity configuration remains an operator setup step. Health reports process liveness only.
+This setup has QA and Subtext adapters, but no automatic session discovery, Self Healing background retry worker, automatic GitHub PR creation, account self-service, rate limiting, or comprehensive production observability. The factory owns PR authoring, so automatic PR creation is not required inside this service. The Netlify site and Neon database are provisioned. The Infisical/GitHub machine-identity configuration remains an operator setup step. Health reports process liveness only.
 
 ## Dashboard
 
@@ -82,3 +82,44 @@ Connection creation stores `start_exploration` and forwards it to QA’s project
 Migration `006_connection_exploration.sql` adds one boolean to existing connection metadata. Existing connections retain true to reflect the old provisioning behavior. Retries with an omitted choice preserve the saved value; an explicitly different choice returns 409 before provider work. Lost creation responses reconcile the original project instead of creating another. Deploy QA’s `start_exploration` support before this Self Healing version; an older QA deployment may ignore the field. No new secrets are required.
 
 Factories update bug dispositions through `PATCH /api/v1/connection/bugs/{bug_id}`, with `status` (`open`, `fixed`, `wontfix`, or `invalid`) and a reason (required for wontfix/invalid). WONTFIX reasons use QA's dedicated field; other reasons append to QA notes. The endpoint checks account ownership, preserves existing notes, reads back the result, and skips completed writes on identical retries. Notes and status updates are separate provider writes: after a partial failure, read and retry the same request. PR association remains a separate operation. Fixed is a factory assertion after checking the fix landed using its GitHub access, not independent Self Healing verification. Closed-unmerged PRs must remain unresolved. Dashboard reads never mutate bug status. No migration or new credentials are needed.
+
+## Durable service error diagnostics
+
+Migration `008_service_errors.sql` adds an internal `service_errors` table. The API
+awaits an insert for each unexpected HTTP 5xx response (excluding intentional 501
+unimplemented routes), before returning the existing error envelope. Each occurrence
+has the same request UUID returned in `X-Request-Id` and `error.request_id`, a database
+timestamp, operation ID, error code/status, authenticated account ID when available,
+and validated bug ID when available. Repeated failures remain separate records.
+Failures before authentication have a null account; no client-supplied account ID is
+used. Records have no automatic expiry.
+
+QA bug/dashboard/pipeline schema failures retain up to 30 validation issue paths,
+codes and received types, so an operator can identify a rejected field without the
+original payload. QA HTTP failures retain the upstream status. Request bodies,
+headers, cookies, URLs, credentials, raw provider responses, report/recording content,
+and exception messages/stacks are not stored. Diagnostic details are not returned
+to API clients. This is diagnostic metadata, not a session data store.
+
+For a reported request ID, use an authorized database connection and a parameterized
+query (parameters are the authenticated account ID and full request UUID):
+
+```sql
+SELECT * FROM service_errors WHERE account_id = $1 AND request_id = $2;
+```
+
+To investigate a bug over time:
+
+```sql
+SELECT * FROM service_errors
+WHERE account_id = $1 AND bug_id = $2
+ORDER BY occurred_at DESC;
+```
+
+The internal store's `find` method requires account scope; there is no public error
+retrieval API. Operators can investigate pre-authentication failures directly by
+request UUID. If the error database is unavailable, the handler preserves the
+original response and emits `service_error_persistence_failed` with the same safe
+metadata to runtime logs. That fallback cannot guarantee database durability during
+a database outage. Apply the migration before deploying; this only captures future
+errors and cannot recover previously discarded validation details.
