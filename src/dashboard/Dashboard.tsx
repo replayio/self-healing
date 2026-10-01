@@ -90,7 +90,14 @@ class DashboardError extends Error {
     super(message);
   }
 }
+const MOCK_MODE = import.meta.env.DEV && !window.location.hash.includes("ticket=");
+
 async function api(path: string, signal?: AbortSignal, body?: unknown) {
+  if (MOCK_MODE) {
+    const { mockApi } = await import("./mock-data");
+    const result = mockApi(path);
+    if (result !== null) return result;
+  }
   const response = await fetch(`/api/v1/dashboard/${path}`, {
     credentials: "same-origin",
     signal,
@@ -118,17 +125,20 @@ async function api(path: string, signal?: AbortSignal, body?: unknown) {
 let initialization: Promise<void> | undefined;
 function initialize() {
   if (!initialization) {
-    const ticket = dashboardTicket(window.location.hash);
-    initialization = ticket
-      ? api("redeem", undefined, { ticket }).then(() => {
-          // Keep the capability available for a retry until the cookie exchange succeeds.
-          window.history.replaceState(
-            null,
-            "",
-            window.location.pathname + window.location.search,
-          );
-        })
-      : Promise.resolve();
+    if (MOCK_MODE) {
+      initialization = Promise.resolve();
+    } else {
+      const ticket = dashboardTicket(window.location.hash);
+      initialization = ticket
+        ? api("redeem", undefined, { ticket }).then(() => {
+            window.history.replaceState(
+              null,
+              "",
+              window.location.pathname + window.location.search,
+            );
+          })
+        : Promise.resolve();
+    }
   }
   return initialization;
 }
@@ -242,7 +252,7 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
                   x2={width - 15}
                   y1={top + (i * plot) / 4}
                   y2={top + (i * plot) / 4}
-                  stroke="#e5e5e5"
+                  className="dh-chart-grid"
                   strokeDasharray="3 3"
                 />
                 <text
@@ -280,7 +290,8 @@ export function SessionChart({ days }: { days: Overview["days"] }) {
                     y={top}
                     width={step}
                     height={plot}
-                    fill={active === index ? "#f5f5f5" : "transparent"}
+                    className={active === index ? "dh-chart-hover" : ""}
+                    fill={active === index ? undefined : "transparent"}
                   />
                   {parts.map((part, i) => {
                     used += part;
@@ -566,7 +577,7 @@ export function BugReport({
     <>
       <div className="dh-title-row">
         <div>
-          <a href="/dashboard?tab=bugs">← Bugs</a>
+          <a className="dh-back" href="/dashboard?tab=bugs">← Bugs</a>
           <h1>{bug.title}</h1>
           <p>
             {bugKind(bug.kind)} · {bug.severity} · {bug.status} · Detected{" "}
@@ -644,7 +655,7 @@ function BugDetailPage({ id }: { id: string }) {
     <BugReport bug={result.data} />
   ) : (
     <>
-      <a href="/dashboard?tab=bugs">← Bugs</a>
+      <a className="dh-back" href="/dashboard?tab=bugs">← Bugs</a>
       <LoadState {...result}>Loading bug report…</LoadState>
     </>
   );
@@ -999,7 +1010,7 @@ function SessionDetail({ id, back }: { id: string; back: () => void }) {
   );
   return (
     <>
-      <button onClick={back}>← Sessions</button>
+      <button className="dh-back" onClick={back}>← Sessions</button>
       <div className="dh-title-row">
         <div>
           <h1>User session</h1>
@@ -1262,36 +1273,39 @@ export default function Dashboard() {
   }
   return (
     <div className="dh-app">
-      <header>
-        <a className="brand" href="/">
-          <img className="brand-icon" src="/images/replay-logo.svg" alt="" />
-          Self Healing
-        </a>
-        <span className="badge">Dashboard</span>
-        <nav aria-label="Dashboard navigation">
-          {tabs.map((t) => (
-            <a
-              href={`/dashboard?tab=${t}`}
-              key={t}
-              aria-current={t === tab ? "page" : undefined}
-              onClick={(e) => {
-                if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
-                  e.preventDefault();
-                  navigate(t);
-                }
-              }}
-            >
-              <Icon name={t} />
-              {t[0]!.toUpperCase() + t.slice(1)}
-            </a>
-          ))}
+      <div className="dh-chrome">
+        <header className="dh-topbar">
+          <a className="brand" href="/">
+            <img className="brand-icon" src="/images/replay-logo.svg" alt="" />
+            Self Healing
+          </a>
+          {ready && (
+            <button className="dh-signout" onClick={logout}>
+              End dashboard session
+            </button>
+          )}
+        </header>
+        <nav className="dh-tabnav" aria-label="Dashboard navigation">
+          <div className="dh-tabnav-track">
+            {tabs.map((t) => (
+              <a
+                href={`/dashboard?tab=${t}`}
+                key={t}
+                aria-current={t === tab ? "page" : undefined}
+                onClick={(e) => {
+                  if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+                    e.preventDefault();
+                    navigate(t);
+                  }
+                }}
+              >
+                <Icon name={t} />
+                {t[0]!.toUpperCase() + t.slice(1)}
+              </a>
+            ))}
+          </div>
         </nav>
-        {ready && (
-          <button className="dh-signout" onClick={logout}>
-            End dashboard session
-          </button>
-        )}
-      </header>
+      </div>
       <main className="dh-main">
         {error ? (
           <div className="dh-state" role="alert">
