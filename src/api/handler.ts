@@ -114,7 +114,9 @@ export function createHandler(
       if (gateway) {
         if (request.method !== "POST")
           throw new HttpError(405, "method_not_allowed", "Use POST.");
-        return (dependencies.connections ?? getConnectionService)().callback(
+        return await (
+          dependencies.connections ?? getConnectionService
+        )().callback(
           Id.parse(gateway[1]),
           gateway[2]!,
           request,

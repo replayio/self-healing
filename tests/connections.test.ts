@@ -733,3 +733,115 @@ test("migration preserves existing connections and can be reapplied", async () =
     await f.db.close();
   }
 });
+
+test("callback failures return JSON with upstream status and bounded, redacted diagnostics", async () => {
+  const f = await fixture();
+  try {
+    await f.service.connect(f.account, "customer-key", settings);
+    await f.service.action(f.account, "session", { session_url: sessionUrl });
+    const upload = f.calls.find(
+      (c) => c.path === "/api/project-session/register",
+    )!.body as { source_callback_url: string };
+    const url = upload.source_callback_url;
+    let upstreamResponse = Response.json(
+      { result: {} },
+      { headers: { "mcp-session-id": "upstream-secret" } },
+    );
+    const handle = createHandler({
+      connections: () => ({
+        ...f.service,
+        callback: (id, token, request, body) =>
+          f.service.callback(
+            id,
+            token,
+            request,
+            body,
+            async () => upstreamResponse,
+          ),
+      }),
+    });
+    const invoke = (body: unknown, context?: string) =>
+      handle(
+        new Request(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(context ? { "mcp-session-id": context } : {}),
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+    const init = await invoke({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    const context = init.headers.get("mcp-session-id")!;
+    const rpc = {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "review-open", arguments: { session_url: sessionUrl } },
+    };
+    for (const status of [400, 401, 403, 404, 413, 429, 500, 502]) {
+      upstreamResponse = Response.json(
+        {
+          error: {
+            message:
+              "Session unavailable customer-key upstream-secret new-secret",
+          },
+        },
+        { status, headers: { "mcp-session-id": "new-secret" } },
+      );
+      const response = await invoke(rpc, context);
+      assert.equal(
+        response.status,
+        [400, 401, 403, 404, 429].includes(status) ? status : 503,
+      );
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      const body = await response.json();
+      assert.equal(body.error.code, "subtext_unavailable");
+      assert.equal(body.error.request_id, response.headers.get("x-request-id"));
+      assert.equal(
+        body.error.message,
+        `Subtext review-open rejected the callback request (HTTP ${status}). Session unavailable [redacted] [redacted] [redacted]`,
+      );
+      assert.equal(
+        response.headers.get("www-authenticate"),
+        status === 401 ? "Bearer" : null,
+      );
+    }
+    for (const body of [
+      "<html>private upstream error page</html>",
+      JSON.stringify({ message: "x".repeat(5000) }),
+    ]) {
+      upstreamResponse = new Response(body, { status: 500 });
+      const response = await invoke(rpc, context);
+      assert.equal(response.status, 503);
+      assert.equal(
+        (await response.json()).error.message,
+        "Subtext review-open rejected the callback request (HTTP 500).",
+      );
+    }
+    upstreamResponse = Response.json(
+      { message: "x".repeat(1000) },
+      { status: 400 },
+    );
+    assert.equal(
+      (await (await invoke(rpc, context)).json()).error.message,
+      "Subtext review-open rejected the callback request (HTTP 400). " +
+        "x".repeat(512),
+    );
+    // An asynchronous authorization failure must also reach the HTTP error handler.
+    const forbidden = await invoke(
+      {
+        ...rpc,
+        params: {
+          name: "review-open",
+          arguments: { url: sessionUrl + "other" },
+        },
+      },
+      context,
+    );
+    assert.equal(forbidden.status, 403);
+    assert.equal((await forbidden.json()).error.code, "session_scope");
+  } finally {
+    await f.db.close();
+  }
+});
