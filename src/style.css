@@ -205,6 +205,11 @@ nav a span {
   flex-shrink: 0;
 }
 
+/* The brand sits directly above these links in the sidebar and already goes home, so Home would
+   just be the same target twice. It earns its place only in the mobile dropdown, which the brand
+   is outside of. */
+.nav-home { display: none; }
+
 /* Only the mobile top bar is short on room; the sidebar shows every link outright. */
 .nav-toggle {
   display: none;
@@ -877,6 +882,7 @@ h3 {
   }
   header:not(.dh-topbar) > nav[data-open] { display: flex; }
   nav a { padding: 10px 12px; font-size: 14px; }
+  .nav-home { display: flex; }
 
   /* Keep the theme toggle reachable — hiding the whole footer left phones with no way to switch. */
   .sidebar-footer {
