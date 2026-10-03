@@ -6,6 +6,8 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
 import { operations } from "../src/api/contracts.ts";
+import * as localState from "../packages/capture/src/local-state.ts";
+import * as indexedState from "../packages/capture/src/indexed-state.ts";
 import * as transport from "../packages/capture/src/transport.ts";
 const NetworkAuxiliaryPayloadSchema = z.object({
   exchanges: z.array(
@@ -61,7 +63,39 @@ const UploadSchema = z.object({
     class FakeKeyboardEvent {}
     class FakeInputEvent {}
     class FakeClipboardEvent {}
+    class FakeStorage {
+      data = new Map<string, string>([
+        [
+          "persistedStore",
+          JSON.stringify({
+            user: { name: "SECRET_NAME", token: "SECRET_TOKEN" },
+            preferences: { darkMode: true },
+          }),
+        ],
+      ]);
+      get length() {
+        return this.data.size;
+      }
+      key(i: number) {
+        return [...this.data.keys()][i] ?? null;
+      }
+      getItem(key: string) {
+        return this.data.get(key) ?? null;
+      }
+      setItem(key: string, value: string) {
+        this.data.set(key, value);
+      }
+      removeItem(key: string) {
+        this.data.delete(key);
+      }
+      clear() {
+        this.data.clear();
+      }
+    }
     const fakeWindow = {
+      localStorage: new FakeStorage(),
+      sessionStorage: new FakeStorage(),
+      document: { cookie: "session=SECRET_COOKIE" },
       location: {
         href: "https://example.test/",
         origin: "https://example.test",
@@ -83,6 +117,11 @@ const UploadSchema = z.object({
           }
           return new Response("", { status: 202 });
         }
+        if (url.includes("startup/slow"))
+          assert.equal(
+            new Request(input, init).headers.get("authorization"),
+            "Bearer SECRET_HEADER",
+          );
         if (url.endsWith("/slow"))
           await new Promise<void>((resolve) => {
             releaseSlow = resolve;
@@ -123,7 +162,13 @@ const UploadSchema = z.object({
     runInNewContext(output, {
       exports,
       require: (name: string) =>
-        name === "@fullstory/browser" ? sdk : transport,
+        name === "@fullstory/browser"
+          ? sdk
+          : name === "./local-state.js"
+            ? localState
+            : name === "./indexed-state.js"
+              ? indexedState
+              : transport,
       window: fakeWindow,
       URL,
       Request,
@@ -160,7 +205,9 @@ const UploadSchema = z.object({
       "initialization is idempotent",
     );
     assert.ok(callbacks.ready);
-    const startup = fakeWindow.fetch("https://example.test/startup/slow");
+    const startup = fakeWindow.fetch("https://example.test/startup/slow", {
+      headers: { Authorization: "Bearer SECRET_HEADER" },
+    });
     assert.ok(releaseSlow);
     await callbacks.ready({ sessionUrl });
     const initialBody = uploads[0]!;
@@ -191,6 +238,52 @@ const UploadSchema = z.object({
     assert.equal(
       startupEntries.filter((e) => e.url.endsWith("/startup/slow")).length,
       1,
+    );
+    const StateSchema = z.object({
+      observations: z.array(
+        z.object({
+          reason: z.string(),
+          storage: z.object({
+            areas: z.array(
+              z.object({
+                area: z.string(),
+                entries: z.array(
+                  z.object({ name: z.string(), value: z.unknown() }),
+                ),
+              }),
+            ),
+          }),
+        }),
+      ),
+    });
+    const initialLocal = initialRegistration.auxiliary_data.find((a) =>
+      a.key.startsWith("local-state-"),
+    )!;
+    assert.equal(
+      StateSchema.parse(initialLocal.payload).observations[0]?.reason,
+      "capture-start",
+    );
+    assert.ok(JSON.stringify(initialLocal).includes("darkMode"));
+    for (const secret of [
+      "SECRET_NAME",
+      "SECRET_TOKEN",
+      "SECRET_COOKIE",
+      "SECRET_HEADER",
+    ])
+      assert.ok(!uploads.join("").includes(secret));
+    assert.deepEqual(startupEntries[0]?.request_headers, {});
+    fakeWindow.localStorage.setItem(
+      "persistedStore",
+      JSON.stringify({ user: null, preferences: { darkMode: false } }),
+    );
+    await flush();
+    const changedState = uploads
+      .flatMap((body) => UploadSchema.parse(JSON.parse(body)).auxiliary_data)
+      .filter((a) => a.key.startsWith("local-state-"))
+      .at(-1)!;
+    assert.ok(
+      JSON.stringify(changedState.payload).includes('"type":"null"'),
+      "same-document writes captured without identify",
     );
     uploads.length = 0;
     async function flush() {
@@ -344,6 +437,16 @@ const UploadSchema = z.object({
       ).interactions.length,
       1,
     );
+    assert.equal(
+      StateSchema.parse(
+        freshArtifacts.find((a) => a.key.startsWith("local-state-"))!.payload,
+      ).observations[0]?.reason,
+      "session-start",
+    );
+    for (const body of uploads)
+      operations
+        .find((operation) => operation.id === "ingestSession")!
+        .body!.parse(JSON.parse(body));
     const ContextSchema = z.object({
       pages: z.array(
         z.object({

@@ -215,16 +215,106 @@ const pending = (operation: Omit<Operation, "implemented">): Operation => ({
 });
 // The connection API is Obvious's operational entry point. Auxiliary payloads use
 // QA's versioned namespace/key envelope; QA validates each supported payload schema.
+const LocalCapturedValue: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.object({ type: z.literal("null") }).strict(),
+    z.object({ type: z.literal("boolean"), value: z.boolean() }).strict(),
+    z
+      .object({
+        type: z.enum(["string", "number", "opaque"]),
+        redacted: z.literal(true),
+      })
+      .strict(),
+    z.object({ type: z.literal("truncated") }).strict(),
+    z
+      .object({
+        type: z.literal("object"),
+        fields: z
+          .array(
+            z
+              .object({
+                name: z.string().max(48),
+                path: z.array(z.string().max(48)).max(2).optional(),
+                value: LocalCapturedValue,
+              })
+              .strict(),
+          )
+          .max(32),
+        truncated: z.boolean(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("array"),
+        items: z.array(LocalCapturedValue).max(16),
+        truncated: z.boolean(),
+      })
+      .strict(),
+  ]),
+);
+const LocalStateEntry = z
+  .object({
+    slot: z.string().regex(/^slot-[0-9]+$/),
+    name: z.string().max(48),
+    path: z.array(z.string().max(48)).max(2).optional(),
+    value: LocalCapturedValue,
+  })
+  .strict();
+const LocalStateArea = z
+  .object({
+    area: z.enum(["localStorage", "sessionStorage", "cookie", "indexedDB"]),
+    observable: z.boolean(),
+    truncated: z.boolean(),
+    entries: z.array(LocalStateEntry).max(32),
+  })
+  .strict();
+export const LocalStatePayload = z
+  .object({
+    version: z.literal(1),
+    page_id: z.string().uuid(),
+    page_started_at: z.number().finite().nonnegative(),
+    dropped_observation_count: z.number().int().nonnegative(),
+    observations: z
+      .array(
+        z
+          .object({
+            captured_at: z.number().finite().nonnegative(),
+            source_timestamp: z.number().finite().nonnegative(),
+            reason: z.enum([
+              "capture-start",
+              "session-start",
+              "storage-event",
+              "interaction",
+              "request",
+              "response",
+              "indexedDB",
+            ]),
+            storage: z
+              .object({
+                areas: z.array(LocalStateArea).min(1).max(3),
+                http_only_cookies: z.literal("unobservable"),
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(16),
+  })
+  .strict();
 export const AuxiliaryArtifact = z
   .object({
     namespace: z.enum(["network", "interaction", "session"]),
-    key: z.enum([
-      "captured-exchanges",
-      "captured-interactions",
-      "metrics",
-      "identity",
-      "capture-context",
-      "capture-producer",
+    key: z.union([
+      z.string().regex(/^local-state-[0-9a-f-]{36}$/),
+      z.enum([
+        "captured-exchanges",
+        "captured-interactions",
+        "metrics",
+        "identity",
+        "capture-context",
+        "capture-producer",
+      ]),
     ]),
     schema_version: z.literal(1),
     payload: z.record(z.unknown()),
@@ -232,13 +322,29 @@ export const AuxiliaryArtifact = z
   .strict()
   .refine(
     (artifact) =>
-      ({
+      (artifact.namespace === "session" &&
+        /^local-state-[0-9a-f-]{36}$/.test(artifact.key)) ||
+      {
         network: ["captured-exchanges"],
         interaction: ["captured-interactions"],
         session: ["metrics", "identity", "capture-context", "capture-producer"],
-      })[artifact.namespace].includes(artifact.key),
+      }[artifact.namespace].includes(artifact.key),
     "Unsupported auxiliary namespace/key pair",
-  );
+  )
+  .superRefine((artifact, ctx) => {
+    if (!artifact.key.startsWith("local-state-")) return;
+    const parsed = LocalStatePayload.safeParse(artifact.payload);
+    if (
+      !parsed.success ||
+      artifact.key !== `local-state-${parsed.data.page_id}`
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Invalid page-scoped local state evidence",
+        path: ["payload"],
+      });
+    }
+  });
 const ConnectionInput = object({
   start_exploration: z
     .boolean()

@@ -545,7 +545,13 @@ test("package producer metadata passes HTTP validation and is forwarded unchange
             schema: {
               properties: {
                 auxiliary_data: {
-                  items: { properties: { key: { enum: string[] } } };
+                  items: {
+                    properties: {
+                      key: {
+                        anyOf: Array<{ enum?: string[]; pattern?: string }>;
+                      };
+                    };
+                  };
                 };
               };
             };
@@ -553,11 +559,21 @@ test("package producer metadata passes HTTP validation and is forwarded unchange
         };
       };
     };
+    const keyAlternatives =
+      spec.requestBody.content["application/json"].schema.properties
+        .auxiliary_data.items.properties.key.anyOf;
     assert.ok(
-      spec.requestBody.content[
-        "application/json"
-      ].schema.properties.auxiliary_data.items.properties.key.enum.includes(
-        "capture-producer",
+      keyAlternatives.some((option) =>
+        option.enum?.includes("capture-producer"),
+      ),
+    );
+    assert.ok(
+      keyAlternatives.some(
+        (option) =>
+          option.pattern &&
+          new RegExp(option.pattern).test(
+            "local-state-00000000-0000-4000-8000-000000000000",
+          ),
       ),
     );
   } finally {

@@ -108,15 +108,29 @@ The package owns network, interaction, identity, metrics and session-context gen
 
 ### Capture behavior and lifecycle
 
-The package captures fetch requests (browser-visible headers and bodies), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization and endpoint reuses the controller.
+The package captures fetch exchanges (request bodies, response headers and bodies; request headers are omitted), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization and endpoint reuses the controller.
 
-- `capture.identify({id, name, email})` connects the app’s existing authentication hook to capture.
+- `capture.identify({id, name, email})` optionally associates a user with the session. Local-state capture works independently; no identity call, auth callback, aliases, or per-key configuration is required.
 - `await capture.flush()` waits for in-flight captures and pending uploads. It rejects if FullStory has no session yet or a capture/upload failed.
 - `await capture.stop()` stops new auxiliary capture, removes listeners, and flushes pending data. It does not stop FullStory. It cannot restart on that page; subsequent `identify()` calls do nothing.
 
 Uploads use the original fetch so they do not capture themselves. The package retries network errors, 429s, server errors, and `upload_busy` up to three attempts with identical bodies and event IDs. Session rollover keeps ownership of requests already in flight. `captured_at` is Unix milliseconds and `source_timestamp` is page-relative milliseconds; installers do not generate these fields.
 
 Capture retains the existing producer limits: bodies above 1 MB become null, network bodies have an 8 MB budget per page/session, and network and interaction counts each stop at 5,000 entries per page/session. Dropped counts appear in capture context. The package emits version-1 artifacts and `session/capture-producer` metadata identifying its name and version; this metadata is provenance, not authentication.
+
+### Automatic local-state capture (capture 0.2.0)
+
+The package captures generic local state automatically, including nested JSON in localStorage/sessionStorage and records in existing IndexedDB stores. It records script-visible cookie names/presence with opaque values. No authentication classification or embedding-side bookkeeping is required. Do not add `identify()` calls or key configuration to enable it.
+
+Object/array structure, short identifier-shaped field/storage names, booleans and nulls are retained. String and numeric values are replaced with typed redaction markers; JSON-serialized objects are recursively unpacked, including stores that serialize each slice separately. Other names receive opaque labels because dynamic names can contain user identifiers. IndexedDB record keys are omitted; sanitized database/store paths are retained. This is structural evidence for reconstructing suitable test state, not a reusable copy of a user's credentials. Existing request/response body capture is unchanged and is not covered by this structural redaction.
+
+Capture starts before the application renders. Web Storage method writes are observed automatically, alongside cross-document storage events and request/response, interaction, flush and stop boundaries. Native `storage` events do not fire for same-document writes, so the package instruments `setItem`, `removeItem`, and `clear` and restores those wrappers on stop. Property-assignment writes and cookie changes are sampled at the other boundaries. IndexedDB scans are asynchronous, read-only and bounded; they do not delay application requests, create databases or upgrade them. These scans are observations over an interval, not an atomic cross-store snapshot or a full mutation log.
+
+`session/local-state-<page-id>` version 1 holds cumulative observations for one page within one FullStory session. Separate page keys prevent concurrent tabs/reloads overwriting each other's evidence with QA's generic artifact replacement. Source timestamps are page-relative; IndexedDB observations are timestamped on scan completion and remain assigned to the session that started the scan. The first Web Storage and first IndexedDB observations are retained along with recent changes, up to 16 observations. Dropped observations are counted. Areas report blocked/unavailable access and truncation explicitly. HttpOnly cookies and other-origin storage are inaccessible to this page script.
+
+Work and payload budgets are explicit: 32 entries and 4 KB per area, 128 nodes and depth 8 per structured value, 16 array items, 32 object fields, 64 KB per parsed JSON string, and 512 Web Storage slot identities per page. IndexedDB scans allow 16 databases, 16 stores per database, and 500 ms total. A truncated or unobservable area must never be interpreted as absent state. Serialized state is deduplicated before upload. QA can retain these artifacts; consuming them to prepare journey state is separate work.
+
+Request headers are always `{}` in exported exchanges; outgoing application requests are unchanged. Deploy the forwarding API accepting the new artifacts and publish 0.2.0 before upgrading installations.
 
 ## Forward captures through Self Healing
 

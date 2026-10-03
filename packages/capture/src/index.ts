@@ -1,3 +1,5 @@
+import { readIndexedState } from "./indexed-state.js";
+import { createStorageObserver, watchStorageWrites } from "./local-state.js";
 import { FullStory, init } from "@fullstory/browser";
 import { splitBatches, type Artifact } from "./transport.js";
 
@@ -127,6 +129,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     throw new Error("Capture endpoint must be same-origin");
   }
   const orgId = options.orgId;
+  const observeStorage = createStorageObserver();
   let stopped = false;
   let lastError: Error | undefined;
   const reportError = (error: unknown) => {
@@ -167,6 +170,17 @@ export function initCapture(options: CaptureOptions): CaptureController {
       droppedNetworkCount: 0,
       droppedInteractionCount: 0,
       queuedContext: "",
+      localState: [] as Array<{
+        captured_at: number;
+        source_timestamp: number;
+        reason: string;
+        storage: ReturnType<typeof observeStorage>;
+      }>,
+      droppedLocalState: 0,
+      queuedLocalState: "",
+      lastLocalState: "",
+      indexedPending: false,
+      lastIndexedState: "",
     };
   }
   type CaptureSession = ReturnType<typeof createCaptureSession>;
@@ -184,6 +198,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         previous.uploadTimer = null;
         void queueCaptureUpload(previous);
         currentSession = createCaptureSession(sessionUrl, previous.sessionUrl);
+        observeLocalState(currentSession, "session-start");
         sessions.add(currentSession);
       }
       uploadCapture(currentSession);
@@ -202,6 +217,76 @@ export function initCapture(options: CaptureOptions): CaptureController {
       return null;
     }
   }
+
+  function observeLocalState(session: CaptureSession, reason: string): void {
+    const storage = observeStorage(window);
+    const signature = JSON.stringify(storage);
+    if (!session.indexedPending) {
+      session.indexedPending = true;
+      const pending = readIndexedState(window)
+        .then((area) => {
+          const indexed = {
+            areas: [area],
+            http_only_cookies: "unobservable" as const,
+          };
+          const indexedSignature = JSON.stringify(indexed);
+          if (indexedSignature !== session.lastIndexedState) {
+            session.lastIndexedState = indexedSignature;
+            appendLocalState(
+              session,
+              "indexedDB",
+              indexed,
+              Math.round(performance.now()),
+            );
+          }
+        })
+        .catch(reportError)
+        .finally(() => {
+          session.indexedPending = false;
+        });
+      inFlight.add(pending);
+      void pending.finally(() => inFlight.delete(pending));
+    }
+    if (signature === session.lastLocalState) return;
+    session.lastLocalState = signature;
+    appendLocalState(session, reason, storage, Math.round(performance.now()));
+  }
+  function appendLocalState(
+    session: CaptureSession,
+    reason: string,
+    storage: ReturnType<typeof observeStorage>,
+    source_timestamp: number,
+  ): void {
+    if (session.localState.length >= 16) {
+      // Keep the first observation and the most recent transitions.
+      // Preserve the first snapshot for both synchronous storage and IndexedDB.
+      const first = new Set<string>();
+      const discard = session.localState.findIndex((observation) => {
+        const kind =
+          observation.reason === "indexedDB" ? "indexedDB" : "web-storage";
+        if (first.has(kind)) return true;
+        first.add(kind);
+        return false;
+      });
+      session.localState.splice(discard < 0 ? 1 : discard, 1);
+      session.droppedLocalState++;
+    }
+    session.localState.push({
+      captured_at: performance.timeOrigin + source_timestamp,
+      source_timestamp,
+      reason,
+      storage,
+    });
+    uploadCapture(session);
+  }
+  observeLocalState(currentSession, "capture-start");
+  const storageChanged = () => {
+    if (stopped) return;
+    const session = captureSession();
+    if (session) observeLocalState(session, "storage-event");
+  };
+  window.addEventListener("storage", storageChanged);
+  const stopWatchingStorage = watchStorageWrites(window, storageChanged);
 
   setCapturedUserEmail = (email) => {
     userEmail = email;
@@ -261,12 +346,29 @@ export function initCapture(options: CaptureOptions): CaptureController {
       dropped_network_count: session.droppedNetworkCount,
       dropped_interaction_count: session.droppedInteractionCount,
     });
+    const localState = JSON.stringify({
+      version: 1,
+      page_id: pageId,
+      page_started_at: performance.timeOrigin,
+      observations: session.localState,
+      dropped_observation_count: session.droppedLocalState,
+    });
     const auxiliaryData: Artifact[] = [
+      ...(localState !== session.queuedLocalState
+        ? [
+            {
+              namespace: "session",
+              key: `local-state-${pageId}`,
+              schema_version: 1,
+              payload: JSON.parse(localState) as Record<string, unknown>,
+            },
+          ]
+        : []),
       {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.0" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.2.0" },
       },
       ...(context !== session.queuedContext
         ? [
@@ -341,6 +443,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     ];
     if (auxiliaryData.length === 1) return session.uploadChain;
     session.queuedContext = context;
+    session.queuedLocalState = localState;
     session.queuedExchangeCount = session.capturedExchanges.length;
     session.queuedInteractionCount = session.interactionCount;
     session.queuedCapturedInteractionCount =
@@ -404,6 +507,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     if (stopped || !event.isTrusted) return;
     const session = captureSession();
     if (!session) return;
+    observeLocalState(session, "interaction");
     if (countsAsSessionInteraction(event)) session.interactionCount++;
     if (session.capturedInteractions.length >= MAX_CAPTURED_INTERACTIONS) {
       session.droppedInteractionCount++;
@@ -512,6 +616,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
 
     const session = captureSession();
     if (!session) return nativeFetch(request);
+    observeLocalState(session, "request");
     const startedBeforeReady = !fullStoryReady;
     const sourceTimestamp = Math.round(performance.now());
     const capturedAt = performance.timeOrigin + sourceTimestamp;
@@ -529,6 +634,8 @@ export function initCapture(options: CaptureOptions): CaptureController {
       inFlight.delete(responsePromise);
     }
     const capture = (async () => {
+      if (!stopped && session === currentSession)
+        observeLocalState(session, "response");
       const clone = response.clone();
       const responseBytes = await clone.arrayBuffer().catch(() => null);
       const capturedRequestBody = await requestBody;
@@ -551,7 +658,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         method: request.method,
         url: request.url,
         status: clone.status,
-        request_headers: Object.fromEntries(request.headers.entries()),
+        request_headers: {},
         request_body: capturedRequestBody,
         response_headers: Object.fromEntries(clone.headers.entries()),
         response_body:
@@ -584,6 +691,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
       if (!stopped) identifyFullStoryUser(user);
     },
     async flush() {
+      if (!stopped) storageChanged();
       while (inFlight.size) await Promise.allSettled([...inFlight]);
       for (const session of sessions) {
         if (session.uploadTimer) clearTimeout(session.uploadTimer);
@@ -595,7 +703,10 @@ export function initCapture(options: CaptureOptions): CaptureController {
         throw new Error("FullStory session is not ready");
     },
     async stop() {
+      storageChanged();
       stopped = true;
+      window.removeEventListener("storage", storageChanged);
+      stopWatchingStorage();
       for (const eventName of CAPTURED_SESSION_INTERACTION_EVENTS) {
         window.removeEventListener(eventName, recordInteraction, {
           capture: true,
