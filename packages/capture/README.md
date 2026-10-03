@@ -12,9 +12,11 @@ QA consumes compatible versioned artifacts and recognizes the package/version pr
 ingestion and review code does not import this package. When Subtext supplies the required accessors,
 the Self Healing skills will describe the replacement and migration.
 
-## Authentication evidence
+## Automatic local-state capture
 
-Version 0.2.0 adds sampled, value-free storage presence and timestamped `identify` state in page-scoped auxiliary artifacts. Request headers are no longer exported. See the setup skill for behavior, limits, integration and rollout; QA can retain these generic artifacts without importing the package. Consuming them during journey startup is separate work.
+Version 0.2.0 captures generic local state from Web Storage, script-visible cookies and IndexedDB, including redacted nested object structure. It requires no identity callback, auth-specific state or per-key configuration. Request headers are not exported. See the setup skill for behavior, limits and rollout; QA can retain the page-scoped artifacts without importing this package. Journey startup consumption is separate work.
+
+Keep this producer generic: infer application prerequisites downstream from captured data rather than requiring embedding applications to maintain a parallel authentication state or enumerate keys.
 
 ## Development and release
 

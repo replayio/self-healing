@@ -572,7 +572,7 @@ test("package producer metadata passes HTTP validation and is forwarded unchange
         (option) =>
           option.pattern &&
           new RegExp(option.pattern).test(
-            "auth-state-00000000-0000-4000-8000-000000000000",
+            "local-state-00000000-0000-4000-8000-000000000000",
           ),
       ),
     );

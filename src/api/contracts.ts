@@ -215,25 +215,60 @@ const pending = (operation: Omit<Operation, "implemented">): Operation => ({
 });
 // The connection API is Obvious's operational entry point. Auxiliary payloads use
 // QA's versioned namespace/key envelope; QA validates each supported payload schema.
-const StoragePresenceEntry = z
+const LocalCapturedValue: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.object({ type: z.literal("null") }).strict(),
+    z.object({ type: z.literal("boolean"), value: z.boolean() }).strict(),
+    z
+      .object({
+        type: z.enum(["string", "number", "opaque"]),
+        redacted: z.literal(true),
+      })
+      .strict(),
+    z.object({ type: z.literal("truncated") }).strict(),
+    z
+      .object({
+        type: z.literal("object"),
+        fields: z
+          .array(
+            z
+              .object({
+                name: z.string().max(48),
+                path: z.array(z.string().max(48)).max(2).optional(),
+                value: LocalCapturedValue,
+              })
+              .strict(),
+          )
+          .max(32),
+        truncated: z.boolean(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("array"),
+        items: z.array(LocalCapturedValue).max(16),
+        truncated: z.boolean(),
+      })
+      .strict(),
+  ]),
+);
+const LocalStateEntry = z
   .object({
     slot: z.string().regex(/^slot-[0-9]+$/),
-    alias: z
-      .string()
-      .regex(/^[a-z][a-z0-9-]{0,47}$/)
-      .optional(),
-    present: z.literal(true),
+    name: z.string().max(48),
+    path: z.array(z.string().max(48)).max(2).optional(),
+    value: LocalCapturedValue,
   })
   .strict();
-const StoragePresenceArea = z
+const LocalStateArea = z
   .object({
-    area: z.enum(["localStorage", "sessionStorage", "cookie"]),
+    area: z.enum(["localStorage", "sessionStorage", "cookie", "indexedDB"]),
     observable: z.boolean(),
     truncated: z.boolean(),
-    entries: z.array(StoragePresenceEntry).max(32),
+    entries: z.array(LocalStateEntry).max(32),
   })
   .strict();
-export const AuthStatePayload = z
+export const LocalStatePayload = z
   .object({
     version: z.literal(1),
     page_id: z.string().uuid(),
@@ -252,13 +287,11 @@ export const AuthStatePayload = z
               "interaction",
               "request",
               "response",
-              "identify",
+              "indexedDB",
             ]),
-            auth_state: z.enum(["unknown", "authenticated", "unauthenticated"]),
-            auth_observed_at: z.number().finite().nonnegative().nullable(),
             storage: z
               .object({
-                areas: z.array(StoragePresenceArea).length(3),
+                areas: z.array(LocalStateArea).min(1).max(3),
                 http_only_cookies: z.literal("unobservable"),
               })
               .strict(),
@@ -273,7 +306,7 @@ export const AuxiliaryArtifact = z
   .object({
     namespace: z.enum(["network", "interaction", "session"]),
     key: z.union([
-      z.string().regex(/^auth-state-[0-9a-f-]{36}$/),
+      z.string().regex(/^local-state-[0-9a-f-]{36}$/),
       z.enum([
         "captured-exchanges",
         "captured-interactions",
@@ -290,7 +323,7 @@ export const AuxiliaryArtifact = z
   .refine(
     (artifact) =>
       (artifact.namespace === "session" &&
-        /^auth-state-[0-9a-f-]{36}$/.test(artifact.key)) ||
+        /^local-state-[0-9a-f-]{36}$/.test(artifact.key)) ||
       {
         network: ["captured-exchanges"],
         interaction: ["captured-interactions"],
@@ -299,15 +332,15 @@ export const AuxiliaryArtifact = z
     "Unsupported auxiliary namespace/key pair",
   )
   .superRefine((artifact, ctx) => {
-    if (!artifact.key.startsWith("auth-state-")) return;
-    const parsed = AuthStatePayload.safeParse(artifact.payload);
+    if (!artifact.key.startsWith("local-state-")) return;
+    const parsed = LocalStatePayload.safeParse(artifact.payload);
     if (
       !parsed.success ||
-      artifact.key !== `auth-state-${parsed.data.page_id}`
+      artifact.key !== `local-state-${parsed.data.page_id}`
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Invalid page-scoped auth state evidence",
+        message: "Invalid page-scoped local state evidence",
         path: ["payload"],
       });
     }

@@ -5,8 +5,9 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
-import { operations, AuxiliaryArtifact } from "../src/api/contracts.ts";
-import * as authEvidence from "../packages/capture/src/auth-evidence.ts";
+import { operations } from "../src/api/contracts.ts";
+import * as localState from "../packages/capture/src/local-state.ts";
+import * as indexedState from "../packages/capture/src/indexed-state.ts";
 import * as transport from "../packages/capture/src/transport.ts";
 const NetworkAuxiliaryPayloadSchema = z.object({
   exchanges: z.array(
@@ -62,7 +63,39 @@ const UploadSchema = z.object({
     class FakeKeyboardEvent {}
     class FakeInputEvent {}
     class FakeClipboardEvent {}
+    class FakeStorage {
+      data = new Map<string, string>([
+        [
+          "persistedStore",
+          JSON.stringify({
+            user: { name: "SECRET_NAME", token: "SECRET_TOKEN" },
+            preferences: { darkMode: true },
+          }),
+        ],
+      ]);
+      get length() {
+        return this.data.size;
+      }
+      key(i: number) {
+        return [...this.data.keys()][i] ?? null;
+      }
+      getItem(key: string) {
+        return this.data.get(key) ?? null;
+      }
+      setItem(key: string, value: string) {
+        this.data.set(key, value);
+      }
+      removeItem(key: string) {
+        this.data.delete(key);
+      }
+      clear() {
+        this.data.clear();
+      }
+    }
     const fakeWindow = {
+      localStorage: new FakeStorage(),
+      sessionStorage: new FakeStorage(),
+      document: { cookie: "session=SECRET_COOKIE" },
       location: {
         href: "https://example.test/",
         origin: "https://example.test",
@@ -84,12 +117,11 @@ const UploadSchema = z.object({
           }
           return new Response("", { status: 202 });
         }
-        if (url.includes("startup/slow")) {
+        if (url.includes("startup/slow"))
           assert.equal(
             new Request(input, init).headers.get("authorization"),
-            "Bearer NEVER_CAPTURE_THIS",
+            "Bearer SECRET_HEADER",
           );
-        }
         if (url.endsWith("/slow"))
           await new Promise<void>((resolve) => {
             releaseSlow = resolve;
@@ -112,9 +144,7 @@ const UploadSchema = z.object({
     };
     const exports: {
       initCapture?: (options: { orgId: string }) => {
-        identify: (
-          user: { id: string; name: string; email: string } | null,
-        ) => void;
+        identify: (user: { id: string; name: string; email: string }) => void;
         flush(): Promise<void>;
         stop(): Promise<void>;
       };
@@ -134,9 +164,11 @@ const UploadSchema = z.object({
       require: (name: string) =>
         name === "@fullstory/browser"
           ? sdk
-          : name === "./auth-evidence.js"
-            ? authEvidence
-            : transport,
+          : name === "./local-state.js"
+            ? localState
+            : name === "./indexed-state.js"
+              ? indexedState
+              : transport,
       window: fakeWindow,
       URL,
       Request,
@@ -174,10 +206,7 @@ const UploadSchema = z.object({
     );
     assert.ok(callbacks.ready);
     const startup = fakeWindow.fetch("https://example.test/startup/slow", {
-      headers: {
-        Authorization: "Bearer NEVER_CAPTURE_THIS",
-        "X-Private": "PRIVATE_HEADER_VALUE",
-      },
+      headers: { Authorization: "Bearer SECRET_HEADER" },
     });
     assert.ok(releaseSlow);
     await callbacks.ready({ sessionUrl });
@@ -210,40 +239,51 @@ const UploadSchema = z.object({
       startupEntries.filter((e) => e.url.endsWith("/startup/slow")).length,
       1,
     );
-    assert.ok(!uploads.join("").includes("NEVER_CAPTURE_THIS"));
-    assert.ok(!uploads.join("").includes("PRIVATE_HEADER_VALUE"));
-    assert.deepEqual(startupEntries[0]?.request_headers, {});
-    const AuthSchema = z.object({
+    const StateSchema = z.object({
       observations: z.array(
         z.object({
-          auth_state: z.string(),
           reason: z.string(),
-          auth_observed_at: z.number().nullable(),
+          storage: z.object({
+            areas: z.array(
+              z.object({
+                area: z.string(),
+                entries: z.array(
+                  z.object({ name: z.string(), value: z.unknown() }),
+                ),
+              }),
+            ),
+          }),
         }),
       ),
     });
-    const initialAuth = initialRegistration.auxiliary_data.find((a) =>
-      a.key.startsWith("auth-state-"),
+    const initialLocal = initialRegistration.auxiliary_data.find((a) =>
+      a.key.startsWith("local-state-"),
     )!;
     assert.equal(
-      AuthSchema.parse(initialAuth.payload).observations[0]?.auth_state,
-      "unknown",
+      StateSchema.parse(initialLocal.payload).observations[0]?.reason,
+      "capture-start",
     );
-    const validAuth = { ...initialAuth, schema_version: 1 };
-    assert.equal(AuxiliaryArtifact.safeParse(validAuth).success, true);
-    assert.equal(
-      AuxiliaryArtifact.safeParse({
-        ...validAuth,
-        payload: { ...(initialAuth.payload as object), token: "SECRET" },
-      }).success,
-      false,
+    assert.ok(JSON.stringify(initialLocal).includes("darkMode"));
+    for (const secret of [
+      "SECRET_NAME",
+      "SECRET_TOKEN",
+      "SECRET_COOKIE",
+      "SECRET_HEADER",
+    ])
+      assert.ok(!uploads.join("").includes(secret));
+    assert.deepEqual(startupEntries[0]?.request_headers, {});
+    fakeWindow.localStorage.setItem(
+      "persistedStore",
+      JSON.stringify({ user: null, preferences: { darkMode: false } }),
     );
-    assert.equal(
-      AuxiliaryArtifact.safeParse({
-        ...validAuth,
-        key: "auth-state-00000000-0000-4000-8000-000000000000",
-      }).success,
-      false,
+    await flush();
+    const changedState = uploads
+      .flatMap((body) => UploadSchema.parse(JSON.parse(body)).auxiliary_data)
+      .filter((a) => a.key.startsWith("local-state-"))
+      .at(-1)!;
+    assert.ok(
+      JSON.stringify(changedState.payload).includes('"type":"null"'),
+      "same-document writes captured without identify",
     );
     uploads.length = 0;
     async function flush() {
@@ -351,14 +391,6 @@ const UploadSchema = z.object({
         ) + "\n",
       );
     }
-    const authenticated = uploads
-      .flatMap((body) => UploadSchema.parse(JSON.parse(body)).auxiliary_data)
-      .filter((a) => a.key.startsWith("auth-state-"));
-    assert.equal(
-      AuthSchema.parse(authenticated.at(-1)!.payload).observations.at(-1)
-        ?.auth_state,
-      "authenticated",
-    );
     const oldUrl = sessionUrl;
     const slow = fakeWindow.fetch("https://example.test/slow");
     assert.ok(releaseSlow);
@@ -405,20 +437,11 @@ const UploadSchema = z.object({
       ).interactions.length,
       1,
     );
-    const rolloverAuth = AuthSchema.parse(
-      freshArtifacts.find((a) => a.key.startsWith("auth-state-"))!.payload,
-    );
-    assert.equal(rolloverAuth.observations[0]?.reason, "session-start");
-    assert.equal(rolloverAuth.observations[0]?.auth_state, "authenticated");
-    capture.identify(null);
-    await flush();
-    const signedOut = uploads
-      .flatMap((body) => UploadSchema.parse(JSON.parse(body)).auxiliary_data)
-      .filter((a) => a.key.startsWith("auth-state-"));
     assert.equal(
-      AuthSchema.parse(signedOut.at(-1)!.payload).observations.at(-1)
-        ?.auth_state,
-      "unauthenticated",
+      StateSchema.parse(
+        freshArtifacts.find((a) => a.key.startsWith("local-state-"))!.payload,
+      ).observations[0]?.reason,
+      "session-start",
     );
     for (const body of uploads)
       operations
@@ -512,33 +535,14 @@ const UploadSchema = z.object({
       ),
     );
     assert.ok(recovered.some((a) => a.namespace === "interaction"));
-    assert.equal(
-      recovered.find((a) => a.key === "identity"),
-      undefined,
-      "sign-out must not carry identity into a new session",
-    );
+    assert.deepEqual(recovered.find((a) => a.key === "identity")?.payload, {
+      version: 1,
+      email: "user@example.test",
+    });
     assert.deepEqual(
       recovered.filter((a) => a.key === "metrics").at(-1)?.payload,
       { version: 1, interaction_count: 1 },
     );
-    for (let i = 0; i < 40; i++)
-      capture.identify(
-        i % 2 ? null : { id: "test", name: "Test", email: "test@example.test" },
-      );
-    await flush();
-    const bounded = uploads
-      .flatMap((body) => UploadSchema.parse(JSON.parse(body)).auxiliary_data)
-      .filter((a) => a.key.startsWith("auth-state-"))
-      .at(-1)!;
-    const boundedPayload = z
-      .object({
-        observations: z.array(z.object({ reason: z.string() })),
-        dropped_observation_count: z.number(),
-      })
-      .parse(bounded.payload);
-    assert.equal(boundedPayload.observations.length, 16);
-    assert.equal(boundedPayload.observations[0]?.reason, "session-start");
-    assert.ok(boundedPayload.dropped_observation_count > 0);
     const uploadCount = uploads.length;
     sessionUrl = "";
     await fakeWindow.fetch("https://example.test/capture-stopped");
