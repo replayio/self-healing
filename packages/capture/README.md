@@ -32,9 +32,10 @@ artifact. npm owns the browser login/security-key/2FA prompts. Credentials and O
 arguments or repository secrets. Follow npm's authentication prompt when it appears.
 
 Use `npm run capture:publish -- --dry-run` to test building and packaging without login or publication.
-Registry errors fail the version check; already-published versions are skipped. After publishing,
-the script checks that the version is visible on npm. If visibility verification fails, rerun: an
-existing version is skipped, never overwritten. Temporary tarballs are removed when the script exits.
+Registry errors fail the version check; already-published versions are skipped. After npm accepts publication,
+the script briefly checks registry visibility. Delayed processing or registry read failures report
+visibility as pending without treating the accepted publication as a failure. Use the printed
+`npm view` command to check later; do not republish. Existing versions are skipped, never overwritten. Temporary tarballs are removed when the script exits.
 
 For later releases, update the package version and emitted producer metadata together, update the
 root lockfile, and run the script from the reviewed revision. The producer test checks that metadata
@@ -50,3 +51,5 @@ An upload failure is reported through `onError` and retained for retry on the ne
 explicit `flush()`. Later batches are still attempted. Retries preserve event IDs for server deduplication;
 current session context and metrics are sent after retries so an older batch cannot leave stale counters.
 `flush()` rejects while any batch remains undelivered, and succeeds once they have all been accepted.
+
+Release tests and builds print concise progress; their full output is shown only if they fail.

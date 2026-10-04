@@ -3,10 +3,13 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { captureReleaseStatus } from "./check-capture-release.ts";
+import {
+  captureReleaseStatus,
+  waitForCaptureVisibility,
+} from "./check-capture-release.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-function npm(args: string[], quiet = false): boolean {
+function npm(args: string[], quiet = false, buffered = false): boolean {
   // Keep child scripts on the same Node installation as this release script.
   const env = {
     ...process.env,
@@ -19,9 +22,14 @@ function npm(args: string[], quiet = false): boolean {
     {
       cwd: root,
       env,
-      stdio: quiet ? "ignore" : "inherit",
+      stdio: buffered ? "pipe" : quiet ? "ignore" : "inherit",
+      maxBuffer: 10 * 1024 * 1024,
     },
   );
+  if (buffered && (result.status !== 0 || result.error || result.signal)) {
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+  }
   if (result.error) throw result.error;
   if (result.signal)
     throw new Error(`npm ${args[0]} interrupted (${result.signal}).`);
@@ -44,8 +52,11 @@ export async function publishCapture(dryRun: boolean) {
     console.log(`${manifest.name}@${status.version} is already published.`);
     return;
   }
-  npm(["test"]);
-  npm(["run", "build"]);
+  console.log("Running release tests...");
+  npm(["test"], false, true);
+  console.log("Tests passed. Building release...");
+  npm(["run", "build"], false, true);
+  console.log("Build passed. Packing release...");
   const directory = await mkdtemp(join(tmpdir(), "self-healing-release-"));
   try {
     npm([
@@ -78,16 +89,19 @@ export async function publishCapture(dryRun: boolean) {
       ...(dryRun ? ["--dry-run"] : []),
     ]);
     if (dryRun) return;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      if (!(await captureReleaseStatus(manifest)).publish) {
-        console.log(`Published ${manifest.name}@${status.version}`);
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 5_000));
-    }
-    throw new Error(
-      "npm accepted the publish, but the version is not visible yet. Check the registry before retrying.",
+    console.log(
+      `npm accepted ${manifest.name}@${status.version}. Checking registry visibility...`,
     );
+    const visibility = await waitForCaptureVisibility(manifest);
+    if (visibility === "visible") {
+      console.log(
+        `Published ${manifest.name}@${status.version} (verified on npm).`,
+      );
+    } else {
+      console.log(
+        `Publication accepted; registry visibility is still pending. npm processing can take several minutes. No republish is needed. Check with: npm view ${manifest.name}@${status.version} version`,
+      );
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
