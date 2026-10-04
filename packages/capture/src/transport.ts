@@ -81,3 +81,13 @@ export function splitBatches(
   if (pending.length) result.push(encode(pending));
   return result;
 }
+
+/** Binary or NUL-containing bodies cannot be represented in the text-only capture schema. */
+export function decodeCaptureBody(bytes: ArrayBuffer): string | null {
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return text.includes("\0") ? null : text;
+  } catch {
+    return null;
+  }
+}

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  decodeCaptureBody,
   splitBatches,
   MAX_BATCH_BYTES,
   type Artifact,
@@ -81,4 +82,12 @@ test("oversized individual events fail explicitly without changing data or retur
     input.auxiliary_data[0]!.payload.exchanges[1]!.response_body.length,
     MAX_BATCH_BYTES,
   );
+});
+
+test("body decoding preserves UTF-8 text and rejects binary and NULs", () => {
+  const text = ' café 🦊 \n {"value":"\\u0000"}';
+  assert.equal(decodeCaptureBody(new TextEncoder().encode(text).buffer), text);
+  assert.equal(decodeCaptureBody(new ArrayBuffer(0)), "");
+  assert.equal(decodeCaptureBody(new Uint8Array([97, 0, 98]).buffer), null);
+  assert.equal(decodeCaptureBody(new Uint8Array([0xff, 0xfe]).buffer), null);
 });
