@@ -1,6 +1,6 @@
 {
   "name": "@replayio/self-healing-capture",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "FullStory auxiliary capture for Self Healing and compatible session ingesters",
   "type": "module",
   "main": "./dist/index.js",

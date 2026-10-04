@@ -39,3 +39,14 @@ existing version is skipped, never overwritten. Temporary tarballs are removed w
 For later releases, update the package version and emitted producer metadata together, update the
 root lockfile, and run the script from the reviewed revision. The producer test checks that metadata
 matches the manifest. Installers receive updates through dependency upgrades and their lockfiles.
+
+## Capture failure behavior
+
+Version 0.1.1 preserves valid UTF-8 body text exactly. Binary, invalid UTF-8, or NUL-containing
+bodies are recorded as unavailable (`null`), retaining the exchange metadata. Both request and response
+bodies follow this rule, including compressed requests advertised as `text/plain`.
+
+An upload failure is reported through `onError` and retained for retry on the next capture upload or
+explicit `flush()`. Later batches are still attempted. Retries preserve event IDs for server deduplication;
+current session context and metrics are sent after retries so an older batch cannot leave stale counters.
+`flush()` rejects while any batch remains undelivered, and succeeds once they have all been accepted.

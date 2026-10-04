@@ -1,5 +1,5 @@
 import { FullStory, init } from "@fullstory/browser";
-import { splitBatches, type Artifact } from "./transport.js";
+import { decodeCaptureBody, splitBatches, type Artifact } from "./transport.js";
 
 export interface CaptureOptions {
   orgId: string;
@@ -97,10 +97,6 @@ function identifyFullStoryUser(user: FullStoryUser | null): void {
   if (user.email) setCapturedUserEmail?.(user.email);
 }
 
-function shouldStopSessionUploads(status: number): boolean {
-  return status < 200 || status >= 300;
-}
-
 export function initCapture(options: CaptureOptions): CaptureController {
   if (typeof window === "undefined")
     throw new Error("initCapture must run in the browser");
@@ -159,7 +155,8 @@ export function initCapture(options: CaptureOptions): CaptureController {
       queuedExchangeCount: 0,
       queuedInteractionCount: -1,
       queuedCapturedInteractionCount: 0,
-      uploadsStopped: false,
+      pendingBatches: [] as string[],
+      uploadError: undefined as Error | undefined,
       userEmail,
       queuedUserEmail: null as string | null,
       uploadTimer: null as ReturnType<typeof setTimeout> | null,
@@ -216,7 +213,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
   ): Promise<string | null> {
     const bytes = await value.clone().arrayBuffer();
     if (bytes.byteLength > MAX_BODY_BYTES) return null;
-    return new TextDecoder().decode(bytes);
+    return decodeCaptureBody(bytes);
   }
 
   async function sendCaptureBatch(body: string): Promise<Response> {
@@ -246,7 +243,14 @@ export function initCapture(options: CaptureOptions): CaptureController {
   }
 
   function queueCaptureUpload(session: CaptureSession): Promise<void> {
-    if (!session.sessionUrl || session.uploadsStopped) return Promise.resolve();
+    if (!session.sessionUrl) return Promise.resolve();
+    session.uploadChain = session.uploadChain.then(() =>
+      drainCaptureUpload(session),
+    );
+    return session.uploadChain;
+  }
+
+  async function drainCaptureUpload(session: CaptureSession): Promise<void> {
     const exchanges = session.capturedExchanges
       .slice(session.queuedExchangeCount)
       .map(
@@ -266,9 +270,9 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.0" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.1" },
       },
-      ...(context !== session.queuedContext
+      ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
             {
               namespace: "session",
@@ -315,7 +319,8 @@ export function initCapture(options: CaptureOptions): CaptureController {
             },
           ]
         : []),
-      ...(session.interactionCount !== session.queuedInteractionCount
+      ...(session.interactionCount !== session.queuedInteractionCount ||
+      session.pendingBatches.length > 0
         ? [
             {
               namespace: "session",
@@ -328,7 +333,9 @@ export function initCapture(options: CaptureOptions): CaptureController {
             },
           ]
         : []),
-      ...(session.userEmail && session.userEmail !== session.queuedUserEmail
+      ...(session.userEmail &&
+      (session.userEmail !== session.queuedUserEmail ||
+        session.pendingBatches.length > 0)
         ? [
             {
               namespace: "session",
@@ -339,39 +346,48 @@ export function initCapture(options: CaptureOptions): CaptureController {
           ]
         : []),
     ];
-    if (auxiliaryData.length === 1) return session.uploadChain;
+    if (auxiliaryData.length === 1 && !session.pendingBatches.length) return;
+    let batches: string[];
+    try {
+      batches = splitBatches({
+        session_url: session.sessionUrl!,
+        auxiliary_data: auxiliaryData,
+      });
+    } catch (error) {
+      reportError(error);
+      return;
+    }
     session.queuedContext = context;
     session.queuedExchangeCount = session.capturedExchanges.length;
     session.queuedInteractionCount = session.interactionCount;
     session.queuedCapturedInteractionCount =
       session.capturedInteractions.length;
     session.queuedUserEmail = session.userEmail;
-    const body = {
-      session_url: session.sessionUrl,
-      auxiliary_data: auxiliaryData,
-    };
-
-    // Each immutable batch is retried with the same event IDs; the server deduplicates it.
-    session.uploadChain = session.uploadChain
-      .then(async () => {
-        if (session.uploadsStopped) return;
-        for (const batch of splitBatches(body)) {
-          const response = await sendCaptureBatch(batch);
-          if (shouldStopSessionUploads(response.status)) {
-            session.uploadsStopped = true;
-            throw new Error(`Capture upload failed: ${response.status}`);
-          }
+    session.pendingBatches.push(...batches);
+    const failed: string[] = [];
+    session.uploadError = undefined;
+    // Retry identical event IDs, but a rejected batch must not block later interactions.
+    for (const batch of session.pendingBatches) {
+      try {
+        const response = await sendCaptureBatch(batch);
+        if (!response.ok)
+          throw new Error(`Capture upload failed: ${response.status}`);
+      } catch (error) {
+        failed.push(batch);
+        session.uploadError =
+          error instanceof Error ? error : new Error(String(error));
+        try {
+          (options.onError ?? console.error)(session.uploadError);
+        } catch {
+          /* observers cannot break the app */
         }
-      })
-      .catch((error) => {
-        session.uploadsStopped = true;
-        reportError(error);
-      });
-    return session.uploadChain;
+      }
+    }
+    session.pendingBatches = failed;
   }
 
   function uploadCapture(session: CaptureSession): void {
-    if (!session.sessionUrl || session.uploadsStopped) return;
+    if (!session.sessionUrl) return;
     if (session.uploadTimer) return;
     session.uploadTimer = setTimeout(() => {
       session.uploadTimer = null;
@@ -556,7 +572,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         response_headers: Object.fromEntries(clone.headers.entries()),
         response_body:
           responseBytes && responseBytes.byteLength <= MAX_BODY_BYTES
-            ? new TextDecoder().decode(responseBytes)
+            ? decodeCaptureBody(responseBytes)
             : null,
         ...(startedBeforeReady &&
         (request.method === "GET" || request.method === "HEAD") &&
@@ -591,6 +607,9 @@ export function initCapture(options: CaptureOptions): CaptureController {
         await queueCaptureUpload(session);
       }
       if (lastError) throw lastError;
+      for (const session of sessions) {
+        if (session.uploadError) throw session.uploadError;
+      }
       if (!currentSession.sessionUrl)
         throw new Error("FullStory session is not ready");
     },
