@@ -34,3 +34,22 @@ export async function captureReleaseStatus(
   }
   return { version: manifest.version, publish: false };
 }
+
+/** Publication has already succeeded; registry propagation is a separate status. */
+export async function waitForCaptureVisibility(
+  manifest: { name: string; version: string },
+  request: typeof fetch = fetch,
+  pause: () => Promise<void> = () =>
+    new Promise((resolve) => setTimeout(resolve, 5_000)),
+): Promise<"visible" | "pending"> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    if (attempt > 0) await pause();
+    try {
+      if (!(await captureReleaseStatus(manifest, request)).publish)
+        return "visible";
+    } catch {
+      // A registry read failure cannot undo npm's accepted publication.
+    }
+  }
+  return "pending";
+}
