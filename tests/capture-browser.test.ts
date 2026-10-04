@@ -424,7 +424,7 @@ const UploadSchema = z.object({
       );
       rejectedBatchStatus = 0;
       await capture.flush();
-      const afterRecovery = uploads.length;
+      const afterRecovery: number = uploads.length;
       await capture.flush();
       assert.equal(
         uploads.length,
