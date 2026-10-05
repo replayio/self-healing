@@ -17,7 +17,7 @@ export interface QAClient {
     path: string,
     body?: unknown,
     token?: string,
-    method?: "GET" | "POST" | "PATCH",
+    method?: "GET" | "POST" | "PATCH" | "PUT",
   ): Promise<unknown>;
 }
 export interface QAServiceAccess {
@@ -70,7 +70,7 @@ export function createQAClient(
     path: string,
     body?: unknown,
     token = defaultToken,
-    method?: "GET" | "POST" | "PATCH",
+    method?: "GET" | "POST" | "PATCH" | "PUT",
   ): Promise<unknown> => {
     if (!token)
       throw new HttpError(

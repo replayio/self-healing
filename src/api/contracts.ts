@@ -41,6 +41,7 @@ const ExternalService = object({
 }).strict();
 export const ExternalDataConfig = object({
   mode: z.literal("external"),
+  retention: z.literal("zero"),
   database: object({
     adapter: z.literal("neon"),
     connection_string: ServiceSecret.refine((value) => {
@@ -92,6 +93,7 @@ export const DataConfigStatus = z.discriminatedUnion("mode", [
   }).strict(),
   object({
     mode: z.literal("external"),
+  retention: z.literal("zero"),
     revision: z.number().int().positive(),
     availability: z.literal("unsupported"),
   }).strict(),
@@ -788,18 +790,18 @@ export const operations: Operation[] = [
     implemented: true,
     response: DataConfigStatus,
     description:
-      "Returns only mode, revision and adapter availability. Never returns connection strings, endpoints or credentials.",
+      "Reads QA-owned policy status: mode, retention, revision and adapter availability. Never returns connection strings, endpoints or credentials.",
   },
   {
     id: "putDataConfig",
     method: "PUT",
     path: "/api/v1/account/data-config",
-    summary: "Store encrypted account data-service configuration",
+    summary: "Store account data-service configuration in QA",
     implemented: true,
     body: DataConfigInput,
     response: DataConfigStatus,
     description:
-      "Interface foundation only: external QA execution is not implemented. Selecting external mode blocks subsequent Self Healing QA calls with 501; it does not migrate data, stop already queued QA work, validate remote connectivity, or establish ZDR. expected_revision is 0 for initial configuration. Identical retries are idempotent. Switching back to managed storage is not supported.",
+      "QA persists encrypted configuration in its main account database. Interface foundation only: external QA execution is not implemented. Selecting external mode blocks subsequent Self Healing QA calls with 501; it does not migrate data, stop already queued QA work, validate remote connectivity, or establish ZDR. expected_revision is 0 for initial configuration. Identical retries are idempotent. Switching back to managed storage is not supported.",
   },
 
   {

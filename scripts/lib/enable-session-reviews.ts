@@ -13,7 +13,7 @@ const ConnectionRows = z.array(
 
 export async function upgradeSessionReviews(
   query: Query,
-  clientForAccount: (id: string) => Promise<QAClient>,
+  clientForAccount: (id: string) => Promise<QAClient | null>,
 ) {
   let cursor = "";
   let configured = 0;
@@ -22,16 +22,18 @@ export async function upgradeSessionReviews(
       await query(
         `SELECT c.id::text, c.account_id, c.qa_project_id FROM connections c
        JOIN accounts a ON a.id::text=c.account_id
-       WHERE NOT EXISTS (SELECT 1 FROM account_data_configs d WHERE d.account_id=a.id)
-       AND c.ready AND c.qa_project_id IS NOT NULL AND c.id::text > $1
+       WHERE c.ready AND c.qa_project_id IS NOT NULL AND c.id::text > $1
        ORDER BY c.id::text LIMIT 100`,
         [cursor],
       ),
     );
     if (!rows.length) return configured;
     for (const row of rows) {
+      cursor = row.id;
+      const client = await clientForAccount(row.account_id);
+      if (!client) continue;
       await enableSessionReviews(
-        await clientForAccount(row.account_id),
+        client,
         row.qa_project_id,
         true,
       );

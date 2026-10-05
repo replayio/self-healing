@@ -44,13 +44,12 @@ See [the connection protocol](obvious-integration.md) for provisioning recovery,
 
 ## Account data-service interfaces
 
-Account storage configuration and provider composition now have explicit boundaries: an encrypted
-`AccountDataConfigStore`, an authenticated-account `AccountServiceResolver`, and a named `QAClient`.
-Connection, dashboard, and pipeline code share the resolver instead of constructing their own clients.
-The configuration API stores per-account database and artifact/recording endpoint credentials, but
-external QA execution remains an explicit 501 with no managed-storage fallback. This does not stop
-already queued QA work or establish ZDR. See [account data-service interfaces](account-data-services.md)
-for the contract, migration 009, deployment limits, and the required QA-side adapters.
+QA owns account identity/authentication and encrypted ZDR configuration in its main database.
+Self Healing's `AccountDataConfigStore` forwards authenticated settings reads/writes to QA using
+its dedicated account token. Account work belongs in the configured separate database and services.
+`AccountServiceResolver` and the named `QAClient` keep provider selection out of individual operations.
+External execution remains an explicit 501; saved settings do not establish ZDR or stop queued jobs.
+See [account data-service interfaces](account-data-services.md) for deployment order and remaining work.
 
 ## Provider implementation roadmap
 

@@ -53,7 +53,6 @@ test("deployment upgrades only ready account-owned connections with the correspo
       "003_session_coordination.sql",
       "004_accounts.sql",
       "006_connection_exploration.sql",
-      "009_account_data_config.sql",
     ])
       await db.exec(
         await readFile(
@@ -122,17 +121,9 @@ test("deployment upgrades only ready account-owned connections with the correspo
       [reviewers, reviewers],
     );
     assert.equal(await upgradeSessionReviews(query, client), 2);
-    await query(
-      "INSERT INTO account_data_configs(account_id,revision,fingerprint,encrypted_configuration) VALUES($1,1,'fingerprint','encrypted')",
-      [ids[1]],
-    );
     assert.equal(
       await upgradeSessionReviews(query, async (id) => {
-        assert.equal(
-          id,
-          ids[0],
-          "external accounts must never get managed provider work during deployment",
-        );
+        if (id === ids[1]) return null;
         return client(id);
       }),
       1,
