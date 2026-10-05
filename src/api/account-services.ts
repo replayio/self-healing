@@ -36,7 +36,7 @@ export function accountServiceResolver(
       throw new HttpError(
         501,
         "external_qa_not_implemented",
-        "External QA data services are not implemented. No QA request was sent.",
+        "External QA data services are not implemented. No QA work request was sent.",
       );
     }
     const credentials = await (
