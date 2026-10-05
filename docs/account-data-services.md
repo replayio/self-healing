@@ -69,3 +69,15 @@ cleanup; no stored values are silently copied or dropped.
 QA tests cover encrypted persistence, account binding, concurrent revision conflicts, and resolver
 failure behavior. Self Healing tests cover authenticated forwarding, strict response validation,
 redaction, upstream failures, and work being blocked by QA's external policy.
+
+## Common execution boundaries
+
+`requireAccountWork` is the single Self Healing admission policy used by account service resolution
+and authenticated session callbacks. A callback verifies its token, derives the account from its stored
+session, and checks current QA settings before decrypting the Subtext key or contacting the provider.
+A policy lookup failure stops the callback. Existing callback URLs therefore do not bypass a newly
+saved external policy. No account identity supplied by the callback caller controls routing.
+
+QA's recorder-backed HTTP entry points now import one account gateway; ordinary SQL/storage clients
+require its explicit context. Internal HTTP jobs use one signed dispatch transport and restore their
+account at the gateway. This does not activate the container worker pool or external mutations.

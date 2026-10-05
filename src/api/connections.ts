@@ -31,6 +31,7 @@ export function connectionService(
   qa = qaClient(),
   vault = credentialVault(),
   origin = process.env.SELF_HEALING_URL ?? "https://self-healing.replay.io",
+  authorizeWork?: (accountId: string) => Promise<void>,
 ) {
   const get = async (account: string) => {
     const [row] = await query(
@@ -47,7 +48,7 @@ export function connectionService(
     qa_project_id: c.qa_project_id,
     status: c.ready ? ("connected" as const) : ("pending" as const),
   });
-  const sessions = sessionService(query, qa, vault, origin);
+  const sessions = sessionService(query, qa, vault, origin, authorizeWork);
   const summaryPath = (c: Connection) =>
     `/api/project-session-summarizers?project_id=${encodeURIComponent(c.qa_project_id!)}`;
   return {

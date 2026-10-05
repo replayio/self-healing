@@ -260,6 +260,7 @@ test("new account callbacks decrypt only the retained Subtext key using its fing
       },
       f.vault,
       "https://healing.example",
+      async id => { assert.equal(id, account.account_id); },
     );
     let called = false;
     const response = await service.callback(

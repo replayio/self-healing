@@ -13,7 +13,7 @@ Start with [Obvious integration and rollout](docs/obvious-integration.md). The o
 ## Account data services
 
 The [account data-service interfaces](docs/account-data-services.md) centralize provider access and
-store encrypted per-account database and artifact/recording service configuration. This is interface
+forward per-account database and artifact/recording service configuration to QA for encrypted storage. This is interface
 foundation work: external QA execution returns 501 and is not a working ZDR mode. Existing accounts
 without external configuration retain their managed behavior.
 

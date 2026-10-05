@@ -1,3 +1,4 @@
+import { requireAccountWork } from "./account-policy.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { credentialVault } from "./credentials.ts";
@@ -39,6 +40,7 @@ export function sessionService(
   qa: QAClient,
   vault: ReturnType<typeof credentialVault>,
   origin: string,
+  authorizeWork: (accountId: string) => Promise<void> = requireAccountWork,
 ) {
   const base = new URL(origin);
   if (
@@ -160,6 +162,7 @@ export function sessionService(
         encrypted_key: z.string(),
         credential_binding: z.string(),
       }).parse(row);
+      await authorizeWork(session.account_id);
       return gatewayRequest(
         request,
         vault.decrypt(session.encrypted_key, session.credential_binding),

@@ -5,7 +5,7 @@ import {
 } from "./data-config.ts";
 import { getConnectionService } from "./connections.ts";
 import { createQAClient, type QAClient } from "./qa.ts";
-import { HttpError } from "./errors.ts";
+import { requireAccountWork } from "./account-policy.ts";
 
 export interface AccountServices {
   qa: QAClient;
@@ -27,18 +27,7 @@ export function accountServiceResolver(
   } = {},
 ): AccountServiceResolver {
   return async (accountId) => {
-    const configuration = await (
-      dependencies.dataConfigs ?? getDataConfigStore
-    )().status(accountId);
-    if (configuration.mode === "external") {
-      // Do not send a guessed routing header to an older QA deployment: it may ignore it
-      // and persist customer data in managed storage. Add an explicit external adapter here.
-      throw new HttpError(
-        501,
-        "external_qa_not_implemented",
-        "External QA data services are not implemented. No QA work request was sent.",
-      );
-    }
+    await requireAccountWork(accountId, (dependencies.dataConfigs ?? getDataConfigStore)());
     const credentials = await (
       dependencies.accounts ?? getAccountService
     )().credentials(accountId);
