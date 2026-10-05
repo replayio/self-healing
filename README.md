@@ -10,6 +10,13 @@ The connection API implements the first session-processing slice: one QA identit
 
 Start with [Obvious integration and rollout](docs/obvious-integration.md). The older `/projects/*` configuration API remains available, but its provider, fix-PR, event-stream and notification operations still return explicit `501 not_implemented`. The [operating skill](public/api/v1/skills/operate-self-healing/SKILL.md) guides a factory through periodic bug triage, bug dispositions, explicit bug/PR association and bug-specific preview verification using the implemented connection APIs, without requiring the QA GitHub bot. The factory owns scheduling, PR authoring and merge decisions.
 
+## Account data services
+
+The [account data-service interfaces](docs/account-data-services.md) centralize provider access and
+store encrypted per-account database and artifact/recording service configuration. This is interface
+foundation work: external QA execution returns 501 and is not a working ZDR mode. Existing accounts
+without external configuration retain their managed behavior.
+
 ## Dashboard
 
 Factories call `POST /api/v1/dashboard-sessions` with their account bearer key and give the returned `url` to the user. Links can be opened multiple times until they expire after seven days. The `/dashboard` browser session lasts seven days and has read-only access to Overview, Reports, Bugs, and Sessions. No API key is placed in the browser or URL. See [dashboard behavior and data definitions](docs/dashboard.md).

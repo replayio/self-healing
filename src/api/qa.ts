@@ -11,8 +11,48 @@ export class QARequestError extends HttpError {
   }
 }
 
-export function qaClient(env = process.env, request: typeof fetch = fetch) {
-  const origin = new URL(env.REPLAY_QA_URL ?? "https://qa.replay.io");
+/** Account-bound QA transport. Only session registration overrides its bearer credential. */
+export interface QAClient {
+  (
+    path: string,
+    body?: unknown,
+    token?: string,
+    method?: "GET" | "POST" | "PATCH",
+  ): Promise<unknown>;
+}
+export interface QAServiceAccess {
+  origin: string;
+  token?: string;
+}
+
+export function qaClient(
+  env = process.env,
+  request: typeof fetch = fetch,
+): QAClient {
+  return createQAClient(
+    {
+      origin: env.REPLAY_QA_URL ?? "https://qa.replay.io",
+      token: env.REPLAY_QA_API_TOKEN,
+    },
+    request,
+  );
+}
+
+export function createQAClient(
+  access: QAServiceAccess,
+  request: typeof fetch = fetch,
+): QAClient {
+  const defaultToken = access.token;
+  let origin: URL;
+  try {
+    origin = new URL(access.origin);
+  } catch {
+    throw new HttpError(
+      503,
+      "qa_unavailable",
+      "QA origin must be an HTTPS origin.",
+    );
+  }
   if (
     origin.protocol !== "https:" ||
     origin.username ||
@@ -29,7 +69,7 @@ export function qaClient(env = process.env, request: typeof fetch = fetch) {
   return async (
     path: string,
     body?: unknown,
-    token = env.REPLAY_QA_API_TOKEN,
+    token = defaultToken,
     method?: "GET" | "POST" | "PATCH",
   ): Promise<unknown> => {
     if (!token)
@@ -40,9 +80,16 @@ export function qaClient(env = process.env, request: typeof fetch = fetch) {
       );
     if (!path.startsWith("/api/") || path.startsWith("//"))
       throw new Error("Invalid QA API path");
+    const target = new URL(path, origin);
+    if (
+      target.origin !== origin.origin ||
+      !target.pathname.startsWith("/api/") ||
+      target.hash
+    )
+      throw new Error("Invalid QA API path");
     let response: Response;
     try {
-      response = await request(new URL(path, origin), {
+      response = await request(target, {
         method: method ?? (body === undefined ? "GET" : "POST"),
         headers: {
           Authorization: `Bearer ${token}`,

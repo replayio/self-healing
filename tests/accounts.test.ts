@@ -1,3 +1,4 @@
+import { managedDataConfigs } from "./helpers/account-services.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
@@ -47,6 +48,7 @@ async function fixture() {
   );
   const work: { token: string; path: string }[] = [];
   const handler = createHandler({
+    dataConfigs: managedDataConfigs,
     accounts: () => service,
     store: () => createStore(query),
     connections: (token) =>

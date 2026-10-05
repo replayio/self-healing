@@ -1,3 +1,4 @@
+import { managedDataConfigs } from "./helpers/account-services.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -87,6 +88,7 @@ test("destination routes use the account's QA project and token, preserve other 
       return { accountId: id! };
     };
     const handler = createHandler({
+      dataConfigs: managedDataConfigs,
       authenticate: auth,
       accounts: () => ({
         authenticate: auth,

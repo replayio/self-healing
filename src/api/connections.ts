@@ -6,7 +6,7 @@ import { neon } from "@neondatabase/serverless";
 import { z } from "zod";
 import { credentialVault } from "./credentials.ts";
 import { HttpError } from "./errors.ts";
-import { qaClient } from "./qa.ts";
+import { qaClient, type QAClient } from "./qa.ts";
 import { sessionService } from "./sessions.ts";
 import type { Query } from "./store.ts";
 
@@ -248,7 +248,7 @@ export function connectionService(
     callback: sessions.callback,
   };
 }
-export function getConnectionService(qaToken?: string) {
+export function getConnectionService(qaToken?: string, client?: QAClient) {
   if (!process.env.DATABASE_URL)
     throw new HttpError(
       503,
@@ -258,6 +258,6 @@ export function getConnectionService(qaToken?: string) {
   const sql = neon(process.env.DATABASE_URL);
   return connectionService(
     async (text, values) => await sql(text, values),
-    qaClient({ ...process.env, REPLAY_QA_API_TOKEN: qaToken }),
+    client ?? qaClient({ ...process.env, REPLAY_QA_API_TOKEN: qaToken }),
   );
 }

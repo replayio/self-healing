@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ReportDestinations, ReportDestinationUpdate } from "./contracts.ts";
 import { HttpError } from "./errors.ts";
-import type { qaClient } from "./qa.ts";
+import type { QAClient } from "./qa.ts";
 
 const QaWebhook = z.object({ webhookUrlSet: z.boolean() });
 const QaProject = z.object({
@@ -23,7 +23,7 @@ const QaProject = z.object({
 // QA owns destination persistence and delivery. Never relay a whole project response:
 // even privileged provider responses must not expose webhook URLs or other secrets.
 export function reportDestinations(
-  qa: ReturnType<typeof qaClient>,
+  qa: QAClient,
   projectId: string,
 ) {
   const path = `/api/projects/${encodeURIComponent(projectId)}`;

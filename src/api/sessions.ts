@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { credentialVault } from "./credentials.ts";
 import { HttpError } from "./errors.ts";
-import { qaClient } from "./qa.ts";
+import { type QAClient } from "./qa.ts";
 import { gatewayRequest } from "./gateway.ts";
 import type { Connection } from "./connections.ts";
 import type { Query } from "./store.ts";
@@ -36,7 +36,7 @@ const Session = z.object({
 });
 export function sessionService(
   query: Query,
-  qa: ReturnType<typeof qaClient>,
+  qa: QAClient,
   vault: ReturnType<typeof credentialVault>,
   origin: string,
 ) {

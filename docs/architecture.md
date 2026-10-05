@@ -42,6 +42,16 @@ Each account owns its local configuration and one QA connection. The account's Q
 
 See [the connection protocol](obvious-integration.md) for provisioning recovery, capture batching, upload receipts and automatic reviews, report scheduling and rollout. QA #4902 adds optional session-source callbacks; existing projects need no migration or configuration change. The retained encrypted credential is an intentional extension of the original reference-only secret design to support unattended processing.
 
+## Account data-service interfaces
+
+Account storage configuration and provider composition now have explicit boundaries: an encrypted
+`AccountDataConfigStore`, an authenticated-account `AccountServiceResolver`, and a named `QAClient`.
+Connection, dashboard, and pipeline code share the resolver instead of constructing their own clients.
+The configuration API stores per-account database and artifact/recording endpoint credentials, but
+external QA execution remains an explicit 501 with no managed-storage fallback. This does not stop
+already queued QA work or establish ZDR. See [account data-service interfaces](account-data-services.md)
+for the contract, migration 009, deployment limits, and the required QA-side adapters.
+
 ## Provider implementation roadmap
 
 1. **Key lifecycle and project adoption.** Add explicit credential rotation that preserves the connection, and adoption of existing QA projects. The connection API already provisions one new QA project per account.

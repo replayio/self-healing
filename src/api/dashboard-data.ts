@@ -11,7 +11,7 @@ import {
   QASessionAggregates,
 } from "./contracts.ts";
 import { HttpError, validationDiagnostics } from "./errors.ts";
-import { qaClient, QARequestError } from "./qa.ts";
+import { type QAClient, QARequestError } from "./qa.ts";
 import type { Connection } from "./connections.ts";
 
 const Count = z.number().int().nonnegative();
@@ -119,7 +119,7 @@ const DAY = 86400000;
 
 // Use existing QA APIs; neither recordings nor report bodies are persisted by Self Healing.
 export function dashboardData(
-  qa: ReturnType<typeof qaClient>,
+  qa: QAClient,
   now = Date.now(),
   fixPrs?: typeof getFixPrStore,
 ) {

@@ -47,6 +47,7 @@ export function getOpenApiSpec() {
       429: "QA review capacity unavailable; retry with backoff",
       500: "Internal error",
       503: "Service not configured or database unavailable",
+      501: "Requested account service adapter is not implemented; no work was queued",
     }))
       responses[status] = { description, content: content(ErrorResponse) };
     responses[String(operation.status ?? 200)] = {

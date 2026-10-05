@@ -1,3 +1,4 @@
+import { managedDataConfigs } from "./helpers/account-services.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -394,6 +395,7 @@ test("connection responses hide internal credentials and QA transport uses exist
   const f = await fixture();
   try {
     const handle = createHandler({
+      dataConfigs: managedDataConfigs,
       authenticate: async () => ({ accountId: f.account }),
       connections: () => f.service,
       accounts: () => ({
@@ -462,6 +464,7 @@ test("package producer metadata passes HTTP validation and is forwarded unchange
   try {
     await f.service.connect(f.account, "customer-key", settings);
     const handle = createHandler({
+      dataConfigs: managedDataConfigs,
       authenticate: async () => ({ accountId: f.account }),
       connections: () => f.service,
       accounts: () => ({
@@ -654,6 +657,7 @@ test("HTTP connection validates and returns the saved exploration choice", async
   const f = await fixture();
   try {
     const handler = createHandler({
+      dataConfigs: managedDataConfigs,
       authenticate: async () => ({ accountId: f.account }),
       connections: () => f.service,
       accounts: () => ({
@@ -749,6 +753,7 @@ test("callback failures return JSON with upstream status and bounded, redacted d
       { headers: { "mcp-session-id": "upstream-secret" } },
     );
     const handle = createHandler({
+      dataConfigs: managedDataConfigs,
       connections: () => ({
         ...f.service,
         callback: (id, token, request, body) =>

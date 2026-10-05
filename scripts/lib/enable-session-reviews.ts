@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { enableSessionReviews } from "../../src/api/review-settings.ts";
 import type { Query } from "../../src/api/store.ts";
-import type { qaClient } from "../../src/api/qa.ts";
+import type { QAClient } from "../../src/api/qa.ts";
 
 const ConnectionRows = z.array(
   z.object({
@@ -13,7 +13,7 @@ const ConnectionRows = z.array(
 
 export async function upgradeSessionReviews(
   query: Query,
-  clientForAccount: (id: string) => Promise<ReturnType<typeof qaClient>>,
+  clientForAccount: (id: string) => Promise<QAClient>,
 ) {
   let cursor = "";
   let configured = 0;
@@ -22,7 +22,8 @@ export async function upgradeSessionReviews(
       await query(
         `SELECT c.id::text, c.account_id, c.qa_project_id FROM connections c
        JOIN accounts a ON a.id::text=c.account_id
-       WHERE c.ready AND c.qa_project_id IS NOT NULL AND c.id::text > $1
+       WHERE NOT EXISTS (SELECT 1 FROM account_data_configs d WHERE d.account_id=a.id)
+       AND c.ready AND c.qa_project_id IS NOT NULL AND c.id::text > $1
        ORDER BY c.id::text LIMIT 100`,
         [cursor],
       ),
