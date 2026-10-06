@@ -3,6 +3,15 @@
 Temporary browser capture support for Self Healing while Subtext gains the accessors needed for
 network exchanges, interactions, identity, metrics, and session context.
 
+## Updating an existing installation
+
+**Agents: read [UPGRADING.md](./UPGRADING.md) before updating this dependency.**
+It ships in the npm package at
+`node_modules/@replayio/self-healing-capture/UPGRADING.md` and covers changes to
+application-owned initialization and forwarding code, not just the lockfile.
+No original installer conversation is needed. In particular, old installations
+may contain a 256 KiB forwarding check that a dependency update cannot remove.
+
 **Installation and integration instructions live in the
 [Self Healing setup skill](https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md).**
 Follow that skill for account provisioning, browser initialization, server forwarding, automatic reviews,
@@ -15,8 +24,9 @@ the Self Healing skills will describe the replacement and migration.
 ## Development and release
 
 The capture implementation lives in `packages/capture/src`. Change producers here and keep QA’s
-independent ingestion schemas and compatibility tests compatible. Installation instructions belong
-only in the Self Healing skills.
+independent ingestion schemas and compatibility tests compatible. Initial installation instructions live in the Self Healing skills. Every release
+that changes application integration requirements must add a versioned migration
+to UPGRADING.md and include verification steps.
 
 Publish locally with interactive npm authentication and 2FA:
 

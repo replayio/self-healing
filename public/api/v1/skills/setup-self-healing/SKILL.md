@@ -105,7 +105,7 @@ export const capture = initCapture({
 capture.identify({ id: user.id, name: user.name, email: user.email })
 ```
 
-The package owns network, interaction, identity, metrics and session-context generation, timestamps, session rollover, batching and retries. Preserve the app's existing capture policy. Do not add a generic field-redaction layer. Keep dependencies locked and upgrade the package to receive capture fixes.
+The package owns network, interaction, identity, metrics and session-context generation, timestamps, session rollover, batching and retries. Preserve the app's existing capture policy. Do not add a generic field-redaction layer. Keep dependencies locked and upgrade the package to receive capture fixes. For an existing installation, read the target package's bundled `UPGRADING.md` and apply its versioned migrations to application-owned integration code as well as the dependency and lockfile. Do not repeat account provisioning.
 
 ### Capture behavior and lifecycle
 
