@@ -1,10 +1,17 @@
 import { FullStory, init } from "@fullstory/browser";
-import { decodeCaptureBody, splitBatches, type Artifact } from "./transport.js";
+import {
+  decodeCaptureBody,
+  splitBatches,
+  DEFAULT_MAX_NETWORK_CAPTURE_BYTES,
+  type Artifact,
+} from "./transport.js";
 
 export interface CaptureOptions {
   orgId: string;
   /** Same-origin POST route holding the server-side credential. */
   endpoint?: string;
+  /** Maximum UTF-8 JSON bytes per network exchange (bodies, headers and metadata). Defaults to 1,000,000. */
+  maxNetworkCaptureBytes?: number;
   onError?: (error: Error) => void;
 }
 export interface CaptureController {
@@ -70,7 +77,6 @@ type CapturedInteraction = {
   inputType?: string;
 };
 
-const MAX_BODY_BYTES = 1_000_000;
 const MAX_CAPTURE_BYTES = 8_000_000;
 const MAX_CAPTURED_INTERACTIONS = 5_000;
 const ACTIONABLE_SELECTOR =
@@ -100,10 +106,20 @@ function identifyFullStoryUser(user: FullStoryUser | null): void {
 export function initCapture(options: CaptureOptions): CaptureController {
   if (typeof window === "undefined")
     throw new Error("initCapture must run in the browser");
+  const maxNetworkCaptureBytes =
+    options.maxNetworkCaptureBytes ?? DEFAULT_MAX_NETWORK_CAPTURE_BYTES;
+  if (
+    !Number.isSafeInteger(maxNetworkCaptureBytes) ||
+    maxNetworkCaptureBytes <= 0
+  )
+    throw new Error("maxNetworkCaptureBytes must be a positive safe integer");
   if (active) {
     if (
       options.orgId !== activeOptions?.orgId ||
-      options.endpoint !== activeOptions?.endpoint
+      options.endpoint !== activeOptions?.endpoint ||
+      maxNetworkCaptureBytes !==
+        (activeOptions?.maxNetworkCaptureBytes ??
+          DEFAULT_MAX_NETWORK_CAPTURE_BYTES)
     ) {
       throw new Error("Capture is already initialized with different options");
     }
@@ -208,11 +224,10 @@ export function initCapture(options: CaptureOptions): CaptureController {
     uploadCapture(session);
   };
 
-  async function boundedBody(
+  async function captureBody(
     value: Request | Response,
   ): Promise<string | null> {
     const bytes = await value.clone().arrayBuffer();
-    if (bytes.byteLength > MAX_BODY_BYTES) return null;
     return decodeCaptureBody(bytes);
   }
 
@@ -270,7 +285,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.1" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.2" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
@@ -349,10 +364,13 @@ export function initCapture(options: CaptureOptions): CaptureController {
     if (auxiliaryData.length === 1 && !session.pendingBatches.length) return;
     let batches: string[];
     try {
-      batches = splitBatches({
-        session_url: session.sessionUrl!,
-        auxiliary_data: auxiliaryData,
-      });
+      batches = splitBatches(
+        {
+          session_url: session.sessionUrl!,
+          auxiliary_data: auxiliaryData,
+        },
+        maxNetworkCaptureBytes,
+      );
     } catch (error) {
       reportError(error);
       return;
@@ -534,7 +552,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     const exchangeId = crypto.randomUUID();
     const requestBody =
       request.method !== "GET" && request.method !== "HEAD"
-        ? boundedBody(request).catch(() => null)
+        ? captureBody(request).catch(() => null)
         : Promise.resolve(null);
     const responsePromise = nativeFetch(request);
     inFlight.add(responsePromise);
@@ -570,17 +588,26 @@ export function initCapture(options: CaptureOptions): CaptureController {
         request_headers: Object.fromEntries(request.headers.entries()),
         request_body: capturedRequestBody,
         response_headers: Object.fromEntries(clone.headers.entries()),
-        response_body:
-          responseBytes && responseBytes.byteLength <= MAX_BODY_BYTES
-            ? decodeCaptureBody(responseBytes)
-            : null,
+        response_body: responseBytes ? decodeCaptureBody(responseBytes) : null,
         ...(startedBeforeReady &&
         (request.method === "GET" || request.method === "HEAD") &&
-        responseBytes &&
-        responseBytes.byteLength <= MAX_BODY_BYTES
+        responseBytes
           ? { startup_body: responseBytes, status_text: clone.statusText }
           : {}),
       };
+      const {
+        startup_body: _startup,
+        status_text: _status,
+        ...uploadedExchange
+      } = exchange;
+      if (
+        new TextEncoder().encode(JSON.stringify(uploadedExchange)).byteLength >
+        maxNetworkCaptureBytes
+      ) {
+        session.droppedNetworkCount++;
+        uploadCapture(session);
+        return;
+      }
       session.capturedBytes += exchangeBytes;
       session.capturedExchanges.push(exchange);
       uploadCapture(session);

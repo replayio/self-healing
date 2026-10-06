@@ -97,6 +97,7 @@ import { initCapture } from '@replayio/self-healing-capture'
 export const capture = initCapture({
   orgId: '<FULLSTORY_ORG_ID>',
   endpoint: '/api/self-healing/session',
+  maxNetworkCaptureBytes: 1_000_000, // Optional; default maximum encoded network exchange size
   onError: error => console.error('Session capture failed', error),
 })
 
@@ -108,7 +109,7 @@ The package owns network, interaction, identity, metrics and session-context gen
 
 ### Capture behavior and lifecycle
 
-The package captures fetch requests (browser-visible headers and bodies), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization and endpoint reuses the controller.
+The package captures fetch requests (browser-visible headers and bodies), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization, endpoint, and network capture limit reuses the controller.
 
 - `capture.identify({id, name, email})` connects the app’s existing authentication hook to capture.
 - `await capture.flush()` waits for in-flight captures and pending uploads. It rejects if FullStory has no session yet or a capture/upload failed.
@@ -116,7 +117,7 @@ The package captures fetch requests (browser-visible headers and bodies), clicks
 
 Uploads use the original fetch so they do not capture themselves. The package retries network errors, 429s, server errors, and `upload_busy` up to three attempts with identical bodies and event IDs. Session rollover keeps ownership of requests already in flight. `captured_at` is Unix milliseconds and `source_timestamp` is page-relative milliseconds; installers do not generate these fields.
 
-Capture retains the existing producer limits: bodies above 1 MB become null, network bodies have an 8 MB budget per page/session, and network and interaction counts each stop at 5,000 entries per page/session. Dropped counts appear in capture context. The package emits version-1 artifacts and `session/capture-producer` metadata identifying its name and version; this metadata is provenance, not authentication.
+Capture retains the existing producer limits: network bodies have an 8 MB budget per page/session, and network and interaction counts each stop at 5,000 entries per page/session. Dropped counts appear in capture context. The package emits version-1 artifacts and `session/capture-producer` metadata identifying its name and version; this metadata is provenance, not authentication.
 
 ## Forward captures through Self Healing
 
@@ -125,9 +126,6 @@ Mount this handler at POST `/api/self-healing/session` using the application's s
 ```ts
 export async function POST(request: Request): Promise<Response> {
   const body = await request.text()
-  if (new TextEncoder().encode(body).byteLength > 256 * 1024) {
-    return Response.json({ error: 'Capture exceeds Self Healing request limit' }, { status: 413 })
-  }
   const response = await fetch(
     new URL('/api/v1/connection/sessions', process.env.SELF_HEALING_URL),
     {
@@ -150,7 +148,7 @@ Use the app's existing access controls for its capture route. The forwarding han
 
 The producer sends `{session_url, auxiliary_data}`. Self Healing forwards those artifacts to QA. It does not transform or store the capture bodies locally.
 
-The package splits batches internally at 256 KiB. An oversized individual event is reported through `onError` and causes `capture.flush()` to reject; report the capture failure. There is no event-fragment API or durable offline queue. Installers do not implement batching or modify captured event fields themselves.
+`maxNetworkCaptureBytes` limits each network exchange to 1 MB (1,000,000 bytes) by default and accepts a positive safe integer. It counts the UTF-8 JSON encoding of both bodies, headers, and event metadata. Oversized exchanges are skipped and counted in capture context's `dropped_network_count`; later captures continue. The package derives its batch budget from this limit plus upload-envelope overhead, preserving whole events. Do not add a separate server-side request-size check. There is no event-fragment API or durable offline queue. Installers do not implement batching or modify captured event fields themselves.
 
 ## Verify session delivery and finish setup
 
