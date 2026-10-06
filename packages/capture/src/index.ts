@@ -285,7 +285,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.2" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.3" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
