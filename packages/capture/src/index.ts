@@ -1,10 +1,17 @@
 import { FullStory, init } from "@fullstory/browser";
-import { decodeCaptureBody, splitBatches, type Artifact } from "./transport.js";
+import {
+  decodeCaptureBody,
+  splitBatches,
+  MAX_BATCH_BYTES,
+  type Artifact,
+} from "./transport.js";
 
 export interface CaptureOptions {
   orgId: string;
   /** Same-origin POST route holding the server-side credential. */
   endpoint?: string;
+  /** Maximum UTF-8 bytes per complete upload, including the JSON envelope. Defaults to 1,000,000. */
+  maxBatchBytes?: number;
   onError?: (error: Error) => void;
 }
 export interface CaptureController {
@@ -99,10 +106,14 @@ function identifyFullStoryUser(user: FullStoryUser | null): void {
 export function initCapture(options: CaptureOptions): CaptureController {
   if (typeof window === "undefined")
     throw new Error("initCapture must run in the browser");
+  const maxBatchBytes = options.maxBatchBytes ?? MAX_BATCH_BYTES;
+  if (!Number.isSafeInteger(maxBatchBytes) || maxBatchBytes <= 0)
+    throw new Error("maxBatchBytes must be a positive safe integer");
   if (active) {
     if (
       options.orgId !== activeOptions?.orgId ||
-      options.endpoint !== activeOptions?.endpoint
+      options.endpoint !== activeOptions?.endpoint ||
+      maxBatchBytes !== (activeOptions?.maxBatchBytes ?? MAX_BATCH_BYTES)
     ) {
       throw new Error("Capture is already initialized with different options");
     }
@@ -347,10 +358,13 @@ export function initCapture(options: CaptureOptions): CaptureController {
     if (auxiliaryData.length === 1 && !session.pendingBatches.length) return;
     let batches: string[];
     try {
-      batches = splitBatches({
-        session_url: session.sessionUrl!,
-        auxiliary_data: auxiliaryData,
-      });
+      batches = splitBatches(
+        {
+          session_url: session.sessionUrl!,
+          auxiliary_data: auxiliaryData,
+        },
+        maxBatchBytes,
+      );
     } catch (error) {
       reportError(error);
       return;

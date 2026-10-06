@@ -33,8 +33,8 @@ const UploadSchema = z.object({
   ),
 });
 
-{
-  test("package captures startup, rollover, in-flight responses, inputs and retries", async () => {
+for (const maxBatchBytes of [undefined, 300_000]) {
+  test(`package captures startup, rollover, in-flight responses, inputs and retries (limit ${maxBatchBytes ?? "default"})`, async () => {
     const uploads: string[] = [];
     let failNext = false;
     let sessionUrl = "https://app.fullstory.com/session/test";
@@ -112,6 +112,7 @@ const UploadSchema = z.object({
     const exports: {
       initCapture?: (options: {
         orgId: string;
+        maxBatchBytes?: number;
         onError?: (error: Error) => void;
       }) => {
         identify: (user: { id: string; name: string; email: string }) => void;
@@ -162,9 +163,33 @@ const UploadSchema = z.object({
         timers.delete(id);
       },
     });
-    const capture = exports.initCapture!({ orgId: "test", onError: () => {} });
+    for (const invalid of [
+      0,
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      assert.throws(
+        () => exports.initCapture!({ orgId: "test", maxBatchBytes: invalid }),
+        /positive safe integer/,
+      );
+    }
+    const capture = exports.initCapture!({
+      orgId: "test",
+      maxBatchBytes,
+      onError: () => {},
+    });
+    assert.throws(
+      () => exports.initCapture!({ orgId: "test", maxBatchBytes: 1234 }),
+      /different options/,
+    );
     assert.equal(
-      exports.initCapture!({ orgId: "test" }),
+      exports.initCapture!({
+        orgId: "test",
+        maxBatchBytes: maxBatchBytes ?? 1_000_000,
+      }),
       capture,
       "initialization is idempotent",
     );
@@ -531,5 +556,10 @@ const UploadSchema = z.object({
       uploadCount,
       "stop must not register later SDK sessions",
     );
+    for (const body of uploads)
+      assert.ok(
+        Buffer.byteLength(body) <= (maxBatchBytes ?? 1_000_000),
+        "all upload paths honor the embedder limit",
+      );
   });
 }
