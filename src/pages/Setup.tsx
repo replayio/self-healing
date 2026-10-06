@@ -20,7 +20,7 @@ export function SetupPage() {
   async function copyPrompt() {
     try {
       await navigator.clipboard.writeText(prompt);
-      setCopyStatus("Copied. Paste it into your factory or coding agent.");
+      setCopyStatus("Copied. Paste it into your Obvious factory agent.");
     } catch {
       setCopyStatus("Select the prompt above and copy it manually.");
     }
@@ -30,15 +30,16 @@ export function SetupPage() {
     <div className="page">
       <div className="page-header">
         <p className="eyebrow eyebrow--label">GET STARTED</p>
-        <h1 className="page-title">Set up Self Healing</h1>
+        <h1 className="page-title">Set up Self Healing in Obvious</h1>
         <p className="page-subtitle">
-          Paste one prompt into your coding agent. It handles the rest.
+          Paste one prompt into your Obvious factory agent. It sets up the
+          self-healing loop in your software factory.
         </p>
       </div>
 
       <div className="setup-prompt">
         <div className="prompt-heading">
-          <span className="prompt-label">AGENT PROMPT</span>
+          <span className="prompt-label">OBVIOUS AGENT PROMPT</span>
           <button
             className="copy-btn"
             type="button"
@@ -72,24 +73,25 @@ export function SetupPage() {
         <h2>How it works</h2>
         <ol className="setup-list">
           <li>
-            <h3>Give your agent the prompt</h3>
+            <h3>Give Obvious the prompt</h3>
             <p>
-              Your agent reads the API and setup skill, inspects the project,
-              and asks for anything it needs.
+              Obvious's factory agent reads the API and setup skill, inspects
+              your project, and asks for anything it needs.
             </p>
           </li>
           <li>
             <h3>Connect your account</h3>
             <p>
-              Provide a Subtext key through your agent's secure input. The agent
-              provisions an account and stores the returned API key.
+              Provide a Subtext key through Obvious's secure input. The factory
+              agent provisions an account and stores the returned API key in
+              Obvious's secret store.
             </p>
           </li>
           <li>
             <h3>Verify a real session</h3>
             <p>
-              The agent connects the project, installs session capture and event
-              forwarding, then confirms real sessions are flowing.
+              The factory agent connects the project, installs session capture
+              and event forwarding, then confirms real sessions are flowing.
             </p>
           </li>
         </ol>
@@ -99,7 +101,7 @@ export function SetupPage() {
         <h2>Resources</h2>
         <div className="skill-links">
           <Link to="/skills/setup-self-healing">
-            Setup skill <span>Full walkthrough for initial integration</span>
+            Setup skill <span>The walkthrough Obvious follows to set up the loop</span>
           </Link>
           <Link to="/skills/operate-self-healing">
             Operation skill <span>Session reviews and daily reports</span>
