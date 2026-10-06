@@ -27,13 +27,13 @@ export function LandingPage() {
           <span>Obvious</span>
         </p>
         <h1>
-          Real user problems.
+          Self-healing mode
           <br />
-          <span>Verified fixes.</span>
+          <span>for your software factory.</span>
         </h1>
         <p className="intro">
-          Self Healing connects what users experience to what your factory
-          builds — session insights, QA, and fix verification through one API.
+          Turn signals from production monitoring sessions into verified PRs
+          without lifting a finger.
         </p>
         <div className="hero-actions">
           <Link to="/setup" className="btn btn--primary">
