@@ -286,6 +286,7 @@ test("callback enforces session and MCP-client scope without exposing upstream c
     const id = parts[4]!,
       token = parts[6]!;
     let upstreamCalls = 0;
+    const openedArguments: unknown[] = [];
     const upstream: typeof fetch = async (_url, init) => {
       upstreamCalls++;
       assert.equal(String(_url), "https://api.fullstory.com/mcp/subtext");
@@ -295,8 +296,10 @@ test("callback enforces session and MCP-client scope without exposing upstream c
       );
       const rpc = JSON.parse(String(init?.body)) as {
         method: string;
-        params?: { name: string };
+        params?: { name: string; arguments: unknown };
       };
+      if (rpc.params?.name === "review-open")
+        openedArguments.push(rpc.params.arguments);
       return Response.json(
         {
           jsonrpc: "2.0",
@@ -343,6 +346,60 @@ test("callback enforces session and MCP-client scope without exposing upstream c
       context,
     );
     assert.equal(upstreamCalls, 3);
+    const metadata = {
+      sightmap: [
+        {
+          name: "Session_Save",
+          selectors: ["main button.save"],
+          source: "src/Save.tsx",
+          memory: ["Saves the current document"],
+          tags: ["control"],
+          parentChain: ["SessionPage"],
+          properties: [
+            { name: "label", extract: "text", description: "Button label" },
+          ],
+        },
+      ],
+      memory: ["Document editor"],
+    };
+    for (const alias of ["url", "session_url", "sessionUrl"]) {
+      const args = { [alias]: sessionUrl, ...metadata };
+      await invoke(call("review-open", args), context);
+      assert.deepEqual(openedArguments.at(-1), args);
+    }
+    // Semantic context must not bypass scope checks or choose another session.
+    const callsBeforeRejected = upstreamCalls;
+    for (const args of [
+      { ...metadata },
+      { url: sessionUrl + "other", ...metadata },
+      { url: sessionUrl, session_url: sessionUrl + "other", ...metadata },
+      { sessionUrl: sessionUrl, url: sessionUrl + "other", ...metadata },
+      { url: sessionUrl, ...metadata, trace_id: "another-trace" },
+      { url: sessionUrl, ...metadata, trace_url: "https://example.com/trace" },
+      { url: sessionUrl, ...metadata, device_id: "other", session_id: "other" },
+      { url: sessionUrl, ...metadata, email_address: "other@example.com" },
+      { url: sessionUrl, ...metadata, user_uid: "other-user" },
+      { url: sessionUrl, ...metadata, unexpected: true },
+      { url: sessionUrl, sightmap: "invalid" },
+      { url: sessionUrl, sightmap: [{ name: "Bad", selectors: [42] }] },
+      {
+        url: sessionUrl,
+        sightmap: [
+          {
+            name: "Bad",
+            selectors: ["body"],
+            properties: [{ name: "x", extract: 42 }],
+          },
+        ],
+      },
+      { url: sessionUrl, memory: [42] },
+    ]) {
+      await assert.rejects(invoke(call("review-open", args), context), {
+        status: 403,
+        code: "session_scope",
+      });
+    }
+    assert.equal(upstreamCalls, callsBeforeRejected);
     // A fresh MCP context may reuse a client opened for this same session after a reconnect.
     const reinit = await invoke({
       jsonrpc: "2.0",

@@ -1306,3 +1306,39 @@ export const GatewayCall = z
     arguments: z.record(z.unknown()).optional(),
   })
   .strict();
+
+// review-open may carry semantic context, but alternate session selectors are
+// deliberately excluded: the gateway authorizes only its registered URL.
+export const GatewayReviewOpenArguments = z
+  .object({
+    url: z.string().optional(),
+    session_url: z.string().optional(),
+    sessionUrl: z.string().optional(),
+    sightmap: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            selectors: z.array(z.string().min(1)).min(1),
+            source: z.string().optional(),
+            memory: z.array(z.string()).optional(),
+            tags: z.array(z.string()).optional(),
+            parentChain: z.array(z.string()).optional(),
+            properties: z
+              .array(
+                z
+                  .object({
+                    name: z.string().min(1),
+                    extract: z.string().min(1),
+                    description: z.string().min(1).optional(),
+                  })
+                  .strict(),
+              )
+              .optional(),
+          })
+          .strict(),
+      )
+      .optional(),
+    memory: z.array(z.string()).optional(),
+  })
+  .strict();
