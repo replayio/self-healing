@@ -62,7 +62,7 @@ curl --fail-with-body "$SELF_HEALING_URL/api/v1/connection" \
   -d '{"name":"My app","production_url":"https://app.example.com"}'
 ```
 
-Use the same key for `/api/v1/connection/sessions`, `/reviews`, and `/reports`. See [the integration guide](docs/obvious-integration.md) for batching, automatic reviews, retries and report timing. The capture client batches uploads at 1 MB (1,000,000 bytes) including the JSON envelope; the service does not enforce a separate request-size limit.
+Use the same key for `/api/v1/connection/sessions`, `/reviews`, and `/reports`. See [the integration guide](docs/obvious-integration.md) for batching, automatic reviews, retries and report timing. The capture client defaults to 1 MB (1,000,000 UTF-8 JSON bytes) per network exchange, configurable via `maxNetworkCaptureBytes`; batching is internal and the service does not enforce a separate request-size limit.
 
 The separate `/api/v1/projects` API stores local configuration. Its configuration PUTs replace the full document and do not activate provider work. Its project creation POST remains non-idempotent; use the connection API above to provision QA.
 

@@ -97,7 +97,7 @@ import { initCapture } from '@replayio/self-healing-capture'
 export const capture = initCapture({
   orgId: '<FULLSTORY_ORG_ID>',
   endpoint: '/api/self-healing/session',
-  maxBatchBytes: 1_000_000, // Optional; default maximum total encoded upload size
+  maxNetworkCaptureBytes: 1_000_000, // Optional; default maximum encoded network exchange size
   onError: error => console.error('Session capture failed', error),
 })
 
@@ -109,7 +109,7 @@ The package owns network, interaction, identity, metrics and session-context gen
 
 ### Capture behavior and lifecycle
 
-The package captures fetch requests (browser-visible headers and bodies), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization, endpoint, and batch limit reuses the controller.
+The package captures fetch requests (browser-visible headers and bodies), clicks, input/change values, paste text, keyboard events, identity, activity counts, and page/session context. It does not capture XMLHttpRequest or WebSockets. Repeated initialization with the same organization, endpoint, and network capture limit reuses the controller.
 
 - `capture.identify({id, name, email})` connects the app’s existing authentication hook to capture.
 - `await capture.flush()` waits for in-flight captures and pending uploads. It rejects if FullStory has no session yet or a capture/upload failed.
@@ -148,7 +148,7 @@ Use the app's existing access controls for its capture route. The forwarding han
 
 The producer sends `{session_url, auxiliary_data}`. Self Healing forwards those artifacts to QA. It does not transform or store the capture bodies locally.
 
-The package splits batches internally at `maxBatchBytes` (default 1 MB / 1,000,000 bytes; a positive safe integer), including the UTF-8 encoded JSON envelope. Do not add a separate server-side request-size check. An oversized individual event is reported through `onError` and causes `capture.flush()` to reject; report the capture failure. There is no event-fragment API or durable offline queue. Installers do not implement batching or modify captured event fields themselves.
+`maxNetworkCaptureBytes` limits each network exchange to 1 MB (1,000,000 bytes) by default and accepts a positive safe integer. It counts the UTF-8 JSON encoding of both bodies, headers, and event metadata. Oversized exchanges are skipped and counted in capture context's `dropped_network_count`; later captures continue. The package derives its batch budget from this limit plus upload-envelope overhead, preserving whole events. Do not add a separate server-side request-size check. There is no event-fragment API or durable offline queue. Installers do not implement batching or modify captured event fields themselves.
 
 ## Verify session delivery and finish setup
 

@@ -2,7 +2,7 @@ import { FullStory, init } from "@fullstory/browser";
 import {
   decodeCaptureBody,
   splitBatches,
-  MAX_BATCH_BYTES,
+  DEFAULT_MAX_NETWORK_CAPTURE_BYTES,
   type Artifact,
 } from "./transport.js";
 
@@ -10,8 +10,8 @@ export interface CaptureOptions {
   orgId: string;
   /** Same-origin POST route holding the server-side credential. */
   endpoint?: string;
-  /** Maximum UTF-8 bytes per complete upload, including the JSON envelope. Defaults to 1,000,000. */
-  maxBatchBytes?: number;
+  /** Maximum UTF-8 JSON bytes per network exchange (bodies, headers and metadata). Defaults to 1,000,000. */
+  maxNetworkCaptureBytes?: number;
   onError?: (error: Error) => void;
 }
 export interface CaptureController {
@@ -106,14 +106,20 @@ function identifyFullStoryUser(user: FullStoryUser | null): void {
 export function initCapture(options: CaptureOptions): CaptureController {
   if (typeof window === "undefined")
     throw new Error("initCapture must run in the browser");
-  const maxBatchBytes = options.maxBatchBytes ?? MAX_BATCH_BYTES;
-  if (!Number.isSafeInteger(maxBatchBytes) || maxBatchBytes <= 0)
-    throw new Error("maxBatchBytes must be a positive safe integer");
+  const maxNetworkCaptureBytes =
+    options.maxNetworkCaptureBytes ?? DEFAULT_MAX_NETWORK_CAPTURE_BYTES;
+  if (
+    !Number.isSafeInteger(maxNetworkCaptureBytes) ||
+    maxNetworkCaptureBytes <= 0
+  )
+    throw new Error("maxNetworkCaptureBytes must be a positive safe integer");
   if (active) {
     if (
       options.orgId !== activeOptions?.orgId ||
       options.endpoint !== activeOptions?.endpoint ||
-      maxBatchBytes !== (activeOptions?.maxBatchBytes ?? MAX_BATCH_BYTES)
+      maxNetworkCaptureBytes !==
+        (activeOptions?.maxNetworkCaptureBytes ??
+          DEFAULT_MAX_NETWORK_CAPTURE_BYTES)
     ) {
       throw new Error("Capture is already initialized with different options");
     }
@@ -363,7 +369,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
           session_url: session.sessionUrl!,
           auxiliary_data: auxiliaryData,
         },
-        maxBatchBytes,
+        maxNetworkCaptureBytes,
       );
     } catch (error) {
       reportError(error);
@@ -589,6 +595,19 @@ export function initCapture(options: CaptureOptions): CaptureController {
           ? { startup_body: responseBytes, status_text: clone.statusText }
           : {}),
       };
+      const {
+        startup_body: _startup,
+        status_text: _status,
+        ...uploadedExchange
+      } = exchange;
+      if (
+        new TextEncoder().encode(JSON.stringify(uploadedExchange)).byteLength >
+        maxNetworkCaptureBytes
+      ) {
+        session.droppedNetworkCount++;
+        uploadCapture(session);
+        return;
+      }
       session.capturedBytes += exchangeBytes;
       session.capturedExchanges.push(exchange);
       uploadCapture(session);

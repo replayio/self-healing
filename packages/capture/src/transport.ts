@@ -9,13 +9,37 @@ export interface CaptureBatch {
   session_url: string;
   auxiliary_data: Artifact[];
 }
-export const MAX_BATCH_BYTES = 1_000_000;
+export const DEFAULT_MAX_NETWORK_CAPTURE_BYTES = 1_000_000;
+
+/** Derive the upload budget from the capture limit, allowing one full exchange plus its envelope. */
+export function uploadBatchBytes(
+  sessionUrl: string,
+  maxNetworkCaptureBytes = DEFAULT_MAX_NETWORK_CAPTURE_BYTES,
+): number {
+  return (
+    maxNetworkCaptureBytes +
+    new TextEncoder().encode(
+      JSON.stringify({
+        session_url: sessionUrl,
+        auxiliary_data: [
+          {
+            namespace: "network",
+            key: "captured-exchanges",
+            schema_version: 1,
+            payload: { version: 1, exchanges: [] },
+          },
+        ],
+      }),
+    ).byteLength
+  );
+}
 
 /** Split between whole events, preserving IDs and payloads for identical retries. */
 export function splitBatches(
   input: CaptureBatch,
-  maxBytes = MAX_BATCH_BYTES,
+  maxNetworkCaptureBytes = DEFAULT_MAX_NETWORK_CAPTURE_BYTES,
 ): string[] {
+  const maxBytes = uploadBatchBytes(input.session_url, maxNetworkCaptureBytes);
   const encode = (artifacts: Artifact[]) =>
     JSON.stringify({
       session_url: input.session_url,

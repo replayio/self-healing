@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   decodeCaptureBody,
   splitBatches,
-  MAX_BATCH_BYTES,
+  uploadBatchBytes,
+  DEFAULT_MAX_NETWORK_CAPTURE_BYTES,
   type Artifact,
 } from "../packages/capture/src/transport.ts";
 
@@ -39,7 +40,7 @@ test("capture batching preserves whole Unicode events, provenance and order with
   assert.ok(batches.length > 1);
   assert.deepEqual(batches, splitBatches(input));
   for (const batch of batches)
-    assert.ok(Buffer.byteLength(batch) <= MAX_BATCH_BYTES);
+    assert.ok(Buffer.byteLength(batch) <= uploadBatchBytes(input.session_url));
   const artifacts = batches.flatMap(
     (b) => JSON.parse(b).auxiliary_data,
   ) as Artifact[];
@@ -71,7 +72,10 @@ test("oversized individual events fail explicitly without changing data or retur
           version: 1,
           exchanges: [
             { id: "a", response_body: "x" },
-            { id: "b", response_body: "x".repeat(MAX_BATCH_BYTES) },
+            {
+              id: "b",
+              response_body: "x".repeat(DEFAULT_MAX_NETWORK_CAPTURE_BYTES),
+            },
           ],
         },
       },
@@ -80,7 +84,7 @@ test("oversized individual events fail explicitly without changing data or retur
   assert.throws(() => splitBatches(input), /event exceeds/);
   assert.equal(
     input.auxiliary_data[0]!.payload.exchanges[1]!.response_body.length,
-    MAX_BATCH_BYTES,
+    DEFAULT_MAX_NETWORK_CAPTURE_BYTES,
   );
 });
 
@@ -92,8 +96,13 @@ test("body decoding preserves UTF-8 text and rejects binary and NULs", () => {
   assert.equal(decodeCaptureBody(new Uint8Array([0xff, 0xfe]).buffer), null);
 });
 
-test("the single default limit covers the complete encoded request including envelope and escaping", () => {
-  assert.equal(MAX_BATCH_BYTES, 1_000_000);
+test("batching accommodates a full-size exchange and counts encoded envelope bytes", () => {
+  assert.equal(DEFAULT_MAX_NETWORK_CAPTURE_BYTES, 1_000_000);
+  const entry = { id: "boundary", response_body: "" };
+  const overhead = Buffer.byteLength(JSON.stringify(entry));
+  entry.response_body = "x".repeat(
+    DEFAULT_MAX_NETWORK_CAPTURE_BYTES - overhead,
+  );
   const input = {
     session_url: "https://app.fullstory.com/session/test",
     auxiliary_data: [
@@ -101,34 +110,17 @@ test("the single default limit covers the complete encoded request including env
         namespace: "network",
         key: "captured-exchanges",
         schema_version: 1,
-        payload: {
-          version: 1,
-          exchanges: [{ id: "boundary", response_body: "" }],
-        },
+        payload: { version: 1, exchanges: [entry] },
       },
     ],
   };
-  const entry = input.auxiliary_data[0]!.payload.exchanges[0]!;
-  const overhead = Buffer.byteLength(JSON.stringify(input));
-  entry.response_body = "x".repeat(MAX_BATCH_BYTES - overhead);
-  assert.equal(Buffer.byteLength(splitBatches(input)[0]!), MAX_BATCH_BYTES);
+  const batch = splitBatches(input)[0]!;
+  assert.equal(Buffer.byteLength(batch), uploadBatchBytes(input.session_url));
+  assert.deepEqual(JSON.parse(batch).auxiliary_data[0].payload.exchanges, [
+    entry,
+  ]);
   entry.response_body += "x";
   assert.throws(() => splitBatches(input), /event exceeds/);
   entry.response_body = "\u0000".repeat(180_000);
-  assert.throws(
-    () => splitBatches(input),
-    /event exceeds/,
-    "JSON escaping counts toward the batch limit",
-  );
-  entry.response_body = "x".repeat(500_000);
-  assert.equal(
-    splitBatches(input).length,
-    1,
-    "bodies above the old 256 KiB cap are preserved",
-  );
-  assert.equal(
-    JSON.parse(splitBatches(input)[0]!).auxiliary_data[0].payload.exchanges[0]
-      .response_body,
-    entry.response_body,
-  );
+  assert.throws(() => splitBatches(input), /event exceeds/);
 });

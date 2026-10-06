@@ -33,8 +33,8 @@ const UploadSchema = z.object({
   ),
 });
 
-for (const maxBatchBytes of [undefined, 300_000]) {
-  test(`package captures startup, rollover, in-flight responses, inputs and retries (limit ${maxBatchBytes ?? "default"})`, async () => {
+for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
+  test(`package captures startup, rollover, in-flight responses, inputs and retries (limit ${maxNetworkCaptureBytes ?? "default"})`, async () => {
     const uploads: string[] = [];
     let failNext = false;
     let sessionUrl = "https://app.fullstory.com/session/test";
@@ -112,7 +112,7 @@ for (const maxBatchBytes of [undefined, 300_000]) {
     const exports: {
       initCapture?: (options: {
         orgId: string;
-        maxBatchBytes?: number;
+        maxNetworkCaptureBytes?: number;
         onError?: (error: Error) => void;
       }) => {
         identify: (user: { id: string; name: string; email: string }) => void;
@@ -172,23 +172,28 @@ for (const maxBatchBytes of [undefined, 300_000]) {
       Number.MAX_SAFE_INTEGER + 1,
     ]) {
       assert.throws(
-        () => exports.initCapture!({ orgId: "test", maxBatchBytes: invalid }),
+        () =>
+          exports.initCapture!({
+            orgId: "test",
+            maxNetworkCaptureBytes: invalid,
+          }),
         /positive safe integer/,
       );
     }
     const capture = exports.initCapture!({
       orgId: "test",
-      maxBatchBytes,
+      maxNetworkCaptureBytes,
       onError: () => {},
     });
     assert.throws(
-      () => exports.initCapture!({ orgId: "test", maxBatchBytes: 1234 }),
+      () =>
+        exports.initCapture!({ orgId: "test", maxNetworkCaptureBytes: 1234 }),
       /different options/,
     );
     assert.equal(
       exports.initCapture!({
         orgId: "test",
-        maxBatchBytes: maxBatchBytes ?? 1_000_000,
+        maxNetworkCaptureBytes: maxNetworkCaptureBytes ?? 1_000_000,
       }),
       capture,
       "initialization is idempotent",
@@ -458,6 +463,29 @@ for (const maxBatchBytes of [undefined, 300_000]) {
       );
     }
 
+    const beforeOversized = uploads.length;
+    responseBody = "x".repeat(maxNetworkCaptureBytes ?? 1_000_000);
+    await fakeWindow.fetch("https://example.test/oversized-exchange");
+    await capture.flush();
+    responseBody = "small";
+    await fakeWindow.fetch("https://example.test/after-oversized");
+    await capture.flush();
+    const afterOversized = uploads
+      .slice(beforeOversized)
+      .flatMap((b) => JSON.parse(b).auxiliary_data);
+    const networkAfter = afterOversized
+      .filter((a) => a.namespace === "network")
+      .flatMap((a) => a.payload.exchanges);
+    assert.ok(!networkAfter.some((e) => e.url.endsWith("/oversized-exchange")));
+    assert.ok(networkAfter.some((e) => e.url.endsWith("/after-oversized")));
+    assert.ok(
+      afterOversized.some(
+        (a) =>
+          a.key === "capture-context" &&
+          a.payload.pages[0].dropped_network_count > 0,
+      ),
+    );
+
     responseBody = "x".repeat(200_000);
     for (let i = 0; i < 42; i++) {
       await fakeWindow.fetch(`https://example.test/budget/${i}`);
@@ -558,8 +586,12 @@ for (const maxBatchBytes of [undefined, 300_000]) {
     );
     for (const body of uploads)
       assert.ok(
-        Buffer.byteLength(body) <= (maxBatchBytes ?? 1_000_000),
-        "all upload paths honor the embedder limit",
+        Buffer.byteLength(body) <=
+          transport.uploadBatchBytes(
+            JSON.parse(body).session_url,
+            maxNetworkCaptureBytes,
+          ),
+        "all upload paths honor the derived batch budget",
       );
   });
 }
