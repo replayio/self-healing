@@ -10,7 +10,7 @@ import {
 test("capture batching preserves whole Unicode events, provenance and order within the API byte limit", () => {
   const exchanges = Array.from({ length: 12 }, (_, i) => ({
     id: String(i),
-    response_body: "🦊".repeat(15_000),
+    response_body: "🦊".repeat(50_000),
   }));
   const input = {
     session_url: "https://app.fullstory.com/session/test",
@@ -90,4 +90,45 @@ test("body decoding preserves UTF-8 text and rejects binary and NULs", () => {
   assert.equal(decodeCaptureBody(new ArrayBuffer(0)), "");
   assert.equal(decodeCaptureBody(new Uint8Array([97, 0, 98]).buffer), null);
   assert.equal(decodeCaptureBody(new Uint8Array([0xff, 0xfe]).buffer), null);
+});
+
+test("the single default limit covers the complete encoded request including envelope and escaping", () => {
+  assert.equal(MAX_BATCH_BYTES, 1_000_000);
+  const input = {
+    session_url: "https://app.fullstory.com/session/test",
+    auxiliary_data: [
+      {
+        namespace: "network",
+        key: "captured-exchanges",
+        schema_version: 1,
+        payload: {
+          version: 1,
+          exchanges: [{ id: "boundary", response_body: "" }],
+        },
+      },
+    ],
+  };
+  const entry = input.auxiliary_data[0]!.payload.exchanges[0]!;
+  const overhead = Buffer.byteLength(JSON.stringify(input));
+  entry.response_body = "x".repeat(MAX_BATCH_BYTES - overhead);
+  assert.equal(Buffer.byteLength(splitBatches(input)[0]!), MAX_BATCH_BYTES);
+  entry.response_body += "x";
+  assert.throws(() => splitBatches(input), /event exceeds/);
+  entry.response_body = "\u0000".repeat(180_000);
+  assert.throws(
+    () => splitBatches(input),
+    /event exceeds/,
+    "JSON escaping counts toward the batch limit",
+  );
+  entry.response_body = "x".repeat(500_000);
+  assert.equal(
+    splitBatches(input).length,
+    1,
+    "bodies above the old 256 KiB cap are preserved",
+  );
+  assert.equal(
+    JSON.parse(splitBatches(input)[0]!).auxiliary_data[0].payload.exchanges[0]
+      .response_body,
+    entry.response_body,
+  );
 });

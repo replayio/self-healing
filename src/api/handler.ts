@@ -27,7 +27,6 @@ import {
 import { getOpenApiSpec } from "./openapi.ts";
 import { getStore, type Store } from "./store.ts";
 
-const MAX_BODY_BYTES = 256 * 1024;
 async function readBody(request: Request): Promise<unknown> {
   if (
     request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
@@ -39,31 +38,7 @@ async function readBody(request: Request): Promise<unknown> {
       "Use Content-Type: application/json.",
     );
   }
-  const reader = request.body?.getReader();
-  let text = "",
-    bytes = 0;
-  const decoder = new TextDecoder();
-  if (reader) {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        bytes += value.length;
-        if (bytes > MAX_BODY_BYTES) {
-          await reader.cancel();
-          throw new HttpError(
-            413,
-            "body_too_large",
-            "Request body exceeds 256 KiB.",
-          );
-        }
-        text += decoder.decode(value, { stream: true });
-      }
-      text += decoder.decode();
-    } finally {
-      reader.releaseLock();
-    }
-  }
+  const text = await request.text();
   try {
     return JSON.parse(text);
   } catch {

@@ -70,7 +70,6 @@ type CapturedInteraction = {
   inputType?: string;
 };
 
-const MAX_BODY_BYTES = 1_000_000;
 const MAX_CAPTURE_BYTES = 8_000_000;
 const MAX_CAPTURED_INTERACTIONS = 5_000;
 const ACTIONABLE_SELECTOR =
@@ -208,11 +207,10 @@ export function initCapture(options: CaptureOptions): CaptureController {
     uploadCapture(session);
   };
 
-  async function boundedBody(
+  async function captureBody(
     value: Request | Response,
   ): Promise<string | null> {
     const bytes = await value.clone().arrayBuffer();
-    if (bytes.byteLength > MAX_BODY_BYTES) return null;
     return decodeCaptureBody(bytes);
   }
 
@@ -270,7 +268,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.1" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.2" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
@@ -534,7 +532,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     const exchangeId = crypto.randomUUID();
     const requestBody =
       request.method !== "GET" && request.method !== "HEAD"
-        ? boundedBody(request).catch(() => null)
+        ? captureBody(request).catch(() => null)
         : Promise.resolve(null);
     const responsePromise = nativeFetch(request);
     inFlight.add(responsePromise);
@@ -570,14 +568,10 @@ export function initCapture(options: CaptureOptions): CaptureController {
         request_headers: Object.fromEntries(request.headers.entries()),
         request_body: capturedRequestBody,
         response_headers: Object.fromEntries(clone.headers.entries()),
-        response_body:
-          responseBytes && responseBytes.byteLength <= MAX_BODY_BYTES
-            ? decodeCaptureBody(responseBytes)
-            : null,
+        response_body: responseBytes ? decodeCaptureBody(responseBytes) : null,
         ...(startedBeforeReady &&
         (request.method === "GET" || request.method === "HEAD") &&
-        responseBytes &&
-        responseBytes.byteLength <= MAX_BODY_BYTES
+        responseBytes
           ? { startup_body: responseBytes, status_text: clone.statusText }
           : {}),
       };

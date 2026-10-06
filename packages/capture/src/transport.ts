@@ -9,7 +9,7 @@ export interface CaptureBatch {
   session_url: string;
   auxiliary_data: Artifact[];
 }
-export const MAX_BATCH_BYTES = 256 * 1024;
+export const MAX_BATCH_BYTES = 1_000_000;
 
 /** Split between whole events, preserving IDs and payloads for identical retries. */
 export function splitBatches(
