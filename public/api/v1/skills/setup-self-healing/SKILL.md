@@ -27,7 +27,15 @@ If they opt in, set `start_exploration: true` when creating the connection. Setu
 
 ## Provision and store the account key
 
-If the project has no Self Healing account key, request a Subtext API key with access to its Fullstory sessions through the user's secure secret input. Do not ask the user to paste it into source code or commit it. Never print credentials, return them in status reports, or embed them in client bundles.
+If the project has no Self Healing account key, obtain a Subtext API key with access to its Fullstory sessions. Direct the user to [Subtext](https://subtext.fullstory.com/) and its **Get Started** web flow to sign in or create the appropriate organization and obtain the API key. Neither the user nor the factory should run the Subtext wizard (`npx @subtextdev/subtext-wizard`), even if linked documentation suggests it. Receive the key through the user's secure secret input. Do not ask the user to paste it into source code or commit it. Never print credentials, return them in status reports, or embed them in client bundles.
+
+### Resolve the Fullstory organization
+
+Once the Subtext API key is available, the factory must resolve its organization ID itself before installing capture; do not require the user to supply an org ID. Make a server-side `GET https://api.fullstory.com/me` request with `Authorization: Basic <Subtext API key>` and read the nonempty `orgId` string from the JSON response. The key is used verbatim after `Basic`, without additional base64 encoding. For keys beginning with `eu1.`, use `https://api.eu1.fullstory.com/me`; `na1.` keys use the default host. For legacy keys without a region prefix, use the project's known Fullstory region, or the default host when no region is known. This is Fullstory's [API-key organization lookup](https://github.com/fullstorydev/subtext-wizard/blob/main/src/auth.ts), not a Self Healing route or an MCP `tools/list` call.
+
+Use the returned `orgId` for capture's `orgId` option. If existing instrumentation has an organization ID, verify that it matches; resolve a mismatch before changing capture or provisioning a new account. If the lookup fails or returns no org ID, stop that setup step and report the status without credentials. Ask for a corrected key or region through the appropriate input when needed, rather than asking for an org ID or running the wizard. An existing working Self Healing integration with a configured capture org ID can reuse those settings without requesting the Subtext key again; if the org ID is missing, securely obtain the original Subtext key for this lookup without reprovisioning.
+
+### Provision Self Healing
 
 POST `/api/v1/accounts` (`provisionAccount`) with `Content-Type: application/json` and this body, substituting the key securely:
 
@@ -37,7 +45,7 @@ POST `/api/v1/accounts` (`provisionAccount`) with `Content-Type: application/jso
 
 No bearer key is required for this provisioning request: Self Healing validates the supplied Subtext key. The response contains `account_id` and `api_key`. Save `api_key` as `SELF_HEALING_API_KEY` in the application's server-side secret manager and set `SELF_HEALING_URL` to this service's origin. A local ignored environment file may be used for development. The application needs neither a QA token nor the service's infrastructure secrets.
 
-All subsequent API calls use `Authorization: Bearer <SELF_HEALING_API_KEY>`, **not the Subtext key**. Each account has its own QA identity; Self Healing retains the encrypted provider credentials and mediates QA's session access. Once provisioning succeeds, the application does not need to retain its Subtext key for these API calls.
+All subsequent **Self Healing** API calls use `Authorization: Bearer <SELF_HEALING_API_KEY>`, **not the Subtext key**. Each account has its own QA identity; Self Healing retains the encrypted provider credentials and mediates QA's session access. Once organization lookup and provisioning succeed, the application does not need to retain its Subtext key for these API calls.
 
 Repeating provisioning with the same valid Subtext key recovers the same account and API key. A different Subtext key creates another account even within the same Fullstory organization; do not substitute a new key to recover an existing integration. Account key rotation is not implemented. If provisioning returns `account_busy`, retry with backoff. If it returns `provisioning_pending`, stop provisioning and report that the service operator must reconcile an uncertain QA token issuance. Do not work around it by changing keys.
 
@@ -82,7 +90,7 @@ Confirm the saved settings with GET on the same path. Responses expose email rec
 This skill owns the complete installation procedure. [`@replayio/self-healing-capture`](https://www.npmjs.com/package/@replayio/self-healing-capture) is a temporary implementation until Subtext provides all the accessors needed for auxiliary data. For now, install it; do not copy or generate a fetch wrapper. When those accessors are available, the replacement and migration instructions will live here. QA accepts the compatible data format through its APIs; it provides no application installer or session-configuration UI.
 
 1. Inspect the application for an existing FullStory initialization or copied capture shim. Replace that shim with this package, preserving the existing organization ID and identity hook. There must be one recorder/FullStory initialization.
-2. If the app has no FullStory organization, run `npx @subtextdev/subtext-wizard` to select the organization accessible through the Subtext key used to provision this account.
+2. Use the organization ID resolved from the Subtext API key above (or the existing working integration's configured ID). Do not ask the user to look it up or invoke the Subtext wizard.
 3. Install the package and its FullStory peer dependency:
 
 ```sh
