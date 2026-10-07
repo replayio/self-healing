@@ -11,7 +11,7 @@ Use this skill when the user asks to enable Self Healing in an application. Do t
 
 Use the origin from which you downloaded this skill as `SELF_HEALING_URL`. Resolve every `/api/...` path below against that same origin. GET `/api/v1` for discovery, `/api/v1/skills` for available skills, and `/api/v1/openapi.json` for request/response schemas and implementation status. These are public; no key is needed to read them.
 
-Inspect the project's framework, server routes, deployment configuration, secret manager, and existing Fullstory/capture integration. Reuse existing instrumentation rather than installing a second copy. Identify the production HTTPS URL and a readable project name. Locate any existing `SELF_HEALING_API_KEY` in its secret manager without printing its value. Do not create a new account when an existing working one is available.
+Inspect the project's framework, server routes, deployment configuration, secret manager, and existing Fullstory/capture integration. Reuse existing instrumentation rather than installing a second copy. Identify the production HTTPS URL and a readable project name. Locate any existing `SELF_HEALING_API_KEY` in the factory's durable secret store and the site's server-side secret manager without printing its value. Reuse the working key and securely configure it wherever access is missing. Do not create a new account when an existing working one is available.
 
 Initial setup supports session ingestion, QA reviews, reproduction journeys requested by friction reviews, and daily behavior reports. Providing a key does not discover historical sessions or install browser capture. Automatic fix-PR orchestration, event streams, and other routes marked `planned` are not implemented; do not present saved configuration or a 501 response as working functionality.
 
@@ -37,17 +37,26 @@ Use the returned `orgId` for capture's `orgId` option. If existing instrumentati
 
 ### Provision Self Healing
 
+Before provisioning, identify a durable secret destination that future factory runs can read. Arrange to parse the response and save its `api_key` directly into that store without displaying the response body. Do not rely on chat history, tool output, a shell variable, or temporary process memory to retain the key.
+
 POST `/api/v1/accounts` (`provisionAccount`) with `Content-Type: application/json` and this body, substituting the key securely:
 
 ```json
 {"subtext_api_key":"<Subtext key>"}
 ```
 
-No bearer key is required for this provisioning request: Self Healing validates the supplied Subtext key. The response contains `account_id` and `api_key`. Save `api_key` as `SELF_HEALING_API_KEY` in the application's server-side secret manager and set `SELF_HEALING_URL` to this service's origin. A local ignored environment file may be used for development. The application needs neither a QA token nor the service's infrastructure secrets.
+No bearer key is required for this provisioning request: Self Healing validates the supplied Subtext key. The response contains `account_id` and `api_key`. **Immediately persist the returned `api_key` as `SELF_HEALING_API_KEY` before continuing setup.** It is a required long-lived credential for two consumers:
+
+1. **The factory:** store the key in its durable secret store so later setup steps, resumed runs, bug/fix monitoring, and dashboard-link creation can authenticate.
+2. **The deployed site:** configure that same key as a server-side runtime secret named `SELF_HEALING_API_KEY` for the capture forwarding route. Configure `SELF_HEALING_URL` to this service's origin for both consumers. A shared secret store is sufficient if both can access it; otherwise securely copy the same key into the site's deployment secret manager. Keep production credentials out of preview environments and browser/public environment variables. A local ignored environment file is sufficient only for local development.
+
+Read the key back from the durable factory store without printing it and use that retrieved value for the connection request below. Confirm the site secret is configured for the intended server runtime before deployment; the real capture delivery check below verifies that the deployed route can use it. If secret storage or deployment access is unavailable, report that setup is blocked on credential persistence/configuration; do not mark setup complete. The application needs neither a QA token nor the service's infrastructure secrets.
+
+Record `account_id`, `SELF_HEALING_URL`, and the secret's name/location in durable project or factory setup state so future runs know where to retrieve it. Store only the secret reference there, never the key value. Report that the factory key was saved and the site secret configured without exposing either value.
 
 All subsequent **Self Healing** API calls use `Authorization: Bearer <SELF_HEALING_API_KEY>`, **not the Subtext key**. Each account has its own QA identity; Self Healing retains the encrypted provider credentials and mediates QA's session access. Once organization lookup and provisioning succeed, the application does not need to retain its Subtext key for these API calls.
 
-Repeating provisioning with the same valid Subtext key recovers the same account and API key. A different Subtext key creates another account even within the same Fullstory organization; do not substitute a new key to recover an existing integration. Account key rotation is not implemented. If provisioning returns `account_busy`, retry with backoff. If it returns `provisioning_pending`, stop provisioning and report that the service operator must reconcile an uncertain QA token issuance. Do not work around it by changing keys.
+If the provisioning response or returned key was lost, first check the factory and site secret stores. If neither has it, repeat `POST /api/v1/accounts` with the **same valid Subtext key** to recover the same account and API key, then persist and verify it as above. If the original Subtext key is unavailable, request it through secure secret input. An `account_id` alone cannot authenticate or recover the key. A different Subtext key creates another account even within the same Fullstory organization; do not substitute a new key to recover an existing integration. Account key rotation is not implemented. If provisioning returns `account_busy`, retry with backoff. If it returns `provisioning_pending`, stop provisioning and report that the service operator must reconcile an uncertain QA token issuance. Do not work around it by changing keys.
 
 ## Connect the application
 
