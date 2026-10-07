@@ -7,6 +7,8 @@ description: Guide a coding agent through account provisioning, project connecti
 
 Use this skill when the user asks to enable Self Healing in an application. Do the integration work in the current project; ask the user for missing credentials, deployment access, choices you cannot infer, and the optional site-QA choice below. A user pasting the setup prompt is asking you to perform setup, not just explain the API.
 
+To update an existing installation, follow [update-self-healing](../update-self-healing/SKILL.md), which applies the target package's bundled migrations to the dependency and application integration without repeating provisioning.
+
 ## Discover the service and inspect the project
 
 Use the origin from which you downloaded this skill as `SELF_HEALING_URL`. Resolve every `/api/...` path below against that same origin. GET `/api/v1` for discovery, `/api/v1/skills` for available skills, and `/api/v1/openapi.json` for request/response schemas and implementation status. These are public; no key is needed to read them.

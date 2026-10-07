@@ -33,6 +33,14 @@ test("an unauthenticated agent discovers setup and all served skills on the requ
     operations.find((op) => op.id === "listSkills")!.response.parse(catalog);
     assert.equal(catalog.skills.length, agentSkills.length);
     assert.equal(catalog.skills[0].url, discovery.setup_skill_url);
+    const updateSkill = catalog.skills.find(
+      (skill: { id: string }) => skill.id === "update-self-healing",
+    );
+    assert.ok(updateSkill, "existing installations can discover the update skill");
+    assert.equal(
+      updateSkill.url,
+      `${origin}/api/v1/skills/update-self-healing/SKILL.md`,
+    );
     for (const skill of catalog.skills) {
       const url = new URL(skill.url);
       assert.equal(url.origin, origin);
@@ -45,8 +53,12 @@ test("an unauthenticated agent discovers setup and all served skills on the requ
       assert.ok(markdown.includes("/api/v1"));
       const route = getOpenApiSpec().paths[url.pathname]!.get as {
         security: unknown[];
+        operationId: string;
+        responses: Record<string, { content: Record<string, unknown> }>;
       };
       assert.deepEqual(route.security, []);
+      assert.equal(route.operationId, skill.id);
+      assert.ok(route.responses["200"]!.content["text/markdown"]);
     }
   }
 });

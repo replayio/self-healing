@@ -33,7 +33,7 @@ export function SkillsPage() {
         <p className="eyebrow eyebrow--label">AGENT RESOURCES</p>
         <h1 className="page-title">Skills</h1>
         <p className="page-subtitle">
-          Step-by-step guides your coding agent can follow to set up and operate
+          Step-by-step guides your coding agent can follow to set up, update, and operate
           Self Healing.
         </p>
       </div>

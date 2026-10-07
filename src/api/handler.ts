@@ -135,7 +135,7 @@ export function createHandler(
             skills_url: new URL("/api/v1/skills", url).href,
             setup_skill_url: new URL(agentSkills[0].path, url).href,
             instructions:
-              "Read the setup skill and OpenAPI specification, then follow the skill to set up this project. Skills are public and do not require credentials.",
+              "Read the setup skill and OpenAPI specification to set up this project. To update an existing installation, follow update-self-healing from the skill catalog. Skills are public and do not require credentials.",
             authentication:
               "Provision with a Subtext key using POST /api/v1/accounts. Save the returned Self Healing API key and use it as the bearer credential for subsequent calls. Never place either key in browser code.",
           }),
