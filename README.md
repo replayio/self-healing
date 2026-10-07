@@ -51,6 +51,7 @@ Set `SELF_HEALING_URL` to your deployed origin and `SELF_HEALING_API_KEY` to the
 - `GET /api/v1/openapi.json` — schemas, operation IDs, and `x-implementation-status` for every operation.
 - `GET /api/v1/skills/setup-self-healing/SKILL.md` — project setup.
 - `GET /api/v1/skills/operate-self-healing/SKILL.md` — bug/fix/report loop and stopping conditions.
+- `GET /api/v1/skills/update-self-healing/SKILL.md` — update an existing capture package and application integration using the target release's bundled migrations, then verify session delivery.
 - `GET /api/v1/health` — liveness only, not database or provider readiness.
 
 First POST `/api/v1/accounts` with JSON `{"subtext_api_key":"<Subtext key>"}`. Save the returned `api_key` in your factory's secret store. Repeating provisioning with the same validated Subtext key returns the same account/key.

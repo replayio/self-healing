@@ -441,6 +441,13 @@ export const agentSkills = [
       "Monitor bugs every 15 minutes, triage reports, record WONTFIX reasons, create fix PRs, and verify previews with QA through Self Healing.",
     path: "/api/v1/skills/operate-self-healing/SKILL.md",
   },
+  {
+    id: "update-self-healing",
+    name: "Update Self Healing",
+    description:
+      "Update an existing capture package and application integration using the target release's migrations, then verify real session delivery.",
+    path: "/api/v1/skills/update-self-healing/SKILL.md",
+  },
 ] as const;
 const SkillCatalog = z.object({
   skills: z.array(

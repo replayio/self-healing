@@ -5,7 +5,8 @@ network exchanges, interactions, identity, metrics, and session context.
 
 ## Updating an existing installation
 
-**Agents: read [UPGRADING.md](./UPGRADING.md) before updating this dependency.**
+**Agents: follow the public [Self Healing update skill](https://self-healing.replay.io/api/v1/skills/update-self-healing/SKILL.md)
+and read the target release's [UPGRADING.md](./UPGRADING.md) before updating this dependency.**
 It ships in the npm package at
 `node_modules/@replayio/self-healing-capture/UPGRADING.md` and covers changes to
 application-owned initialization and forwarding code, not just the lockfile.
