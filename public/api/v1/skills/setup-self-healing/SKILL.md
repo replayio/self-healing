@@ -1,13 +1,15 @@
 ---
 name: setup-self-healing
-description: Guide a coding agent through account provisioning, project connection, report destinations, session capture, and verification that real user sessions reach Self Healing.
+description: Set up Self Healing by provisioning its API key, configuring deployment secrets and session capture, and handing off report settings, bug handling, and the status dashboard.
 ---
 
 # Set up Self Healing for this project
 
-Use this skill when the user asks to enable Self Healing in an application. Do the integration work in the current project; ask the user for missing credentials, deployment access, choices you cannot infer, and the optional site-QA choice below. A user pasting the setup prompt is asking you to perform setup, not just explain the API.
+Use this skill when the user asks to enable Self Healing in an application. Do the integration work in the current project; ask the user for a missing Subtext credential, deployment access, choices you cannot infer, and the optional site-QA choice below. Never ask the user to obtain or supply a Self Healing API key: provision it yourself through `POST /api/v1/accounts`, or retrieve the existing key from the project’s secret store. A user pasting the setup prompt is asking you to perform setup, not just explain the API.
 
 To update an existing installation, follow [update-self-healing](../update-self-healing/SKILL.md), which applies the target package's bundled migrations to the dependency and application integration without repeating provisioning.
+
+Self Healing’s dashboard is the user-facing destination for status, reports, bugs, and sessions. Use only that dashboard for status links; never show links to `qa.replay.io`, `app.fullstory.com`, or provider recording URLs, even when API responses contain them. The Subtext onboarding link below is only for obtaining the provisioning credential. Finish with a concise configuration summary and an **Open dashboard** option, as described at the end of this skill.
 
 ## Discover the service and inspect the project
 
@@ -51,6 +53,8 @@ No bearer key is required for this provisioning request: Self Healing validates 
 
 1. **The factory:** store the key in its durable secret store so later setup steps, resumed runs, bug/fix monitoring, and dashboard-link creation can authenticate.
 2. **The deployed site:** configure that same key as a server-side runtime secret named `SELF_HEALING_API_KEY` for the capture forwarding route. Configure `SELF_HEALING_URL` to this service's origin for both consumers. A shared secret store is sufficient if both can access it; otherwise securely copy the same key into the site's deployment secret manager. Keep production credentials out of preview environments and browser/public environment variables. A local ignored environment file is sufficient only for local development.
+
+After persisting the provisioned key, obtain access to the application’s actual deployment configuration. Use the existing deployment integration, CLI login, or secret manager access; if access is missing, ask the user to connect or authorize the deployment provider for the target application and environment. Then set `SELF_HEALING_API_KEY` and `SELF_HEALING_URL` yourself in its server runtime configuration. Merely adding placeholders to `.env.example`, setting local variables, or telling the user to configure them does not complete this step. Apply the provider’s required redeploy/restart through the project’s normal workflow so the running forwarding route receives the values. If access remains unavailable, retain the saved key and report the specific missing deployment access without asking the user for a Self Healing key.
 
 Read the key back from the durable factory store without printing it and use that retrieved value for the connection request below. Confirm the site secret is configured for the intended server runtime before deployment; the real capture delivery check below verifies that the deployed route can use it. If secret storage or deployment access is unavailable, report that setup is blocked on credential persistence/configuration; do not mark setup complete. The application needs neither a QA token nor the service's infrastructure secrets.
 
@@ -176,15 +180,28 @@ Setup is complete when the deployed application's real session captures are succ
 1. Run the target project's relevant tests/build and deploy using its normal workflow and permissions. If deployment requires user action, report that boundary and provide the concrete change for review.
 2. Exercise a real session in the deployed application: make a fetch request, click or enter input, and exercise the existing identity hook if the app has one. Verify that the installed package uploads the resulting session URL and captured artifacts through the application's forwarding route. FullStory recording alone or a hand-crafted metadata-only upload does not verify this path.
 3. Confirm that the forwarding route receives Self Healing's successful response from `POST /api/v1/connection/sessions`: HTTP 200 with `status: "stored"` and a nonempty `session_id`. The route must pass that response back to the package. Verify the uploads containing the exercised network and interaction events succeed, rather than checking only an initial metadata batch. Check that the account key stays server-side and the route uses the app's intended access controls.
-4. Report the deployed integration, the test session URL, Self Healing's returned session ID and ingestion status, the configured report destination (or whether it was declined or still needs user input), and whether the user chose to configure site QA or skip it. If delivery fails, report the failed request's status/error and fix the capture or forwarding problem before declaring setup complete. Never include API keys or secret callback URLs.
+4. Retain the test session URL as internal verification evidence; do not include the provider URL in the user-facing handoff. Summarize the deployed integration, Self Healing’s returned session ID and ingestion status, and the settings described below. If delivery fails, report the failed request's status/error and fix the capture or forwarding problem before declaring setup complete. Never include API keys or secret callback URLs.
 
-Once delivery is verified, declare setup complete and open the dashboard for the user as described below. Do not wait for the session to go quiet, poll QA reviewers, or wait for a daily report. Do not schedule those checks as setup follow-ups or hold the setup handoff for them. Continue forwarding capture batches normally; no completion request or recording shutdown is needed.
+Once delivery is verified, declare capture setup complete and present the completion summary and dashboard option below. Do not wait for the session to go quiet, poll QA reviewers, or wait for a daily report. Do not schedule those checks as setup follow-ups or hold the setup handoff for them. Continue forwarding capture batches normally; no completion request or recording shutdown is needed.
 
 For ongoing self-healing bug triage and fixes, read `/api/v1/skills/operate-self-healing/SKILL.md`. On 401, check which credential is being used and do not fall back to Subtext bearer authentication. On 429 retry with backoff. On 503 or `provisioning_pending`, preserve IDs and report the operator action needed. On 501, stop that unsupported operation; never invent a replacement provider API.
 
-## Open the dashboard
+## Summarize configuration and next steps
 
-When setup is complete, call `POST /api/v1/dashboard-sessions` with the server-side account key and open the returned `url` for the user in the most appropriate way available. If you cannot open it directly, provide a clickable **Open dashboard** link. Generate a fresh link for the handoff; if it expires before the user opens it, request another. Keep the account key server-side.
+Before the handoff, read the saved report destinations and inspect the factory’s actual recurring-task configuration. For ongoing bug handling, follow [operate-self-healing](../operate-self-healing/SKILL.md) within the user’s authorized scope. Reuse an existing monitoring task; if ongoing operation is authorized, arrange the operating skill’s recurring bug triage (suggested every 15 minutes). If it is not authorized or scheduling is unavailable, offer it as a next step and explicitly say automatic fix work is not active. Do not silently equate capture setup with an active factory loop.
+
+Give the user a concise summary of the actual configuration:
+
+- **Capture:** identify the deployed application, confirm real session delivery with the returned session ID and `stored` status, and confirm the factory credential and deployment variables are saved without exposing their values. State whether optional base-site QA was enabled or skipped.
+- **Daily reports:** explain that connection setup enables a daily report on behavior, friction, and bugs at **08:00 UTC**, covering the previous UTC day. The first eligible report covers the setup day and runs the following morning; generation and delivery may finish later. Name the saved email recipients or known Slack/Discord channel, or explicitly state delivery is unconfigured/declined/pending. Never show webhook URLs or guess a channel from a webhook-present flag. Completed reports are available in the Self Healing dashboard. These connection defaults are separate from the legacy project report-preference API; do not imply a custom schedule was applied through an unimplemented route.
+- **New bugs:** explain that captured sessions are automatically analyzed after upload inactivity and findings appear in the dashboard. State whether factory monitoring is active and its actual cadence. When active, it investigates new bugs, dismisses invalid or unsuitable reports with reasons, writes fix PRs for appropriate defects, and verifies fixes against previews where available. Describe the project’s actual review/merge policy; do not promise automatic merging. If no recurring task exists, say bugs will appear in the dashboard but unattended triage and fix PRs are not yet configured. Mention concrete blockers.
+- **Dashboard:** provide an **Open dashboard** option using the fresh launch link below, explaining that it shows self-healing status, daily reports, bugs and fix PRs, and captured sessions. Do not open it automatically unless the user asked to open it.
+
+Use completed, pending, or unavailable accurately for each part. Do not wait for the first analysis, report, or bug to supply this summary.
+
+## Offer the Self Healing dashboard
+
+When setup is complete, call `POST /api/v1/dashboard-sessions` with the server-side account key and provide the returned `url` as a clickable **Open dashboard** option. If the user asks to open it, use the most appropriate available surface. Generate a fresh link for the handoff; if it expires before the user opens it, request another. Keep the account key server-side.
 
 The returned URL can be opened directly in an iframe or embedded artifact. Links are reusable for seven days; each browser context receives a read-only session lasting seven days.
 

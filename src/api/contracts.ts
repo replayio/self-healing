@@ -431,7 +431,7 @@ export const agentSkills = [
     id: "setup-self-healing",
     name: "Set up Self Healing",
     description:
-      "Provision an account, connect this project, install session capture, choose daily report destinations, and verify delivery of real session captures to Self Healing.",
+      "Provision the account key, configure deployment secrets and session capture, verify delivery, and summarize report settings, bug handling, and the Self Healing dashboard.",
     path: "/api/v1/skills/setup-self-healing/SKILL.md",
   },
   {
