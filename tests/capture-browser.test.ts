@@ -538,22 +538,47 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
         "long sessions must not increase the dropped exchange count",
       );
     }
+    const beforeLongInteractions = uploads.length;
     for (let i = 0; i < 5_001; i++)
       listeners.get("click")!({
         type: "click",
         isTrusted: true,
         composedPath: () => [target],
       });
-    await flush();
-    const interactionCap = uploads
-      .map((b) => UploadSchema.parse(JSON.parse(b)))
-      .filter((b) => b.session_url === sessionUrl)
-      .flatMap((b) => b.auxiliary_data)
+    await capture.flush();
+    target.value = "input after 5000 interactions";
+    listeners.get("input")!({
+      type: "input",
+      isTrusted: true,
+      composedPath: () => [target],
+    });
+    await capture.flush();
+    const interactionArtifacts = uploads
+      .slice(beforeLongInteractions)
+      .flatMap((b) => UploadSchema.parse(JSON.parse(b)).auxiliary_data);
+    const longInteractions = interactionArtifacts
+      .filter((a) => a.namespace === "interaction")
+      .flatMap(
+        (a) => InteractionAuxiliaryPayloadSchema.parse(a.payload).interactions,
+      );
+    assert.equal(
+      longInteractions.filter((e) => e.kind === "click").length,
+      5_001,
+    );
+    assert.equal(
+      longInteractions.length,
+      5_002,
+      "flushed interactions must not be uploaded again",
+    );
+    assert.equal(longInteractions.at(-1)?.value, target.value);
+    const interactionContext = uploads
+      .flatMap((b) => UploadSchema.parse(JSON.parse(b)).auxiliary_data)
       .filter((a) => a.key === "capture-context")
       .at(-1);
-    assert.ok(
-      ContextSchema.parse(interactionCap?.payload).pages[0]!
-        .dropped_interaction_count > 0,
+    assert.equal(
+      ContextSchema.parse(interactionContext?.payload).pages[0]!
+        .dropped_interaction_count,
+      0,
     );
     // A terminal error on this session must not stop any producer on its successor.
     terminalFailure = true;

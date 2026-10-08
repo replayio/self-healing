@@ -77,7 +77,6 @@ type CapturedInteraction = {
   inputType?: string;
 };
 
-const MAX_CAPTURED_INTERACTIONS = 5_000;
 const ACTIONABLE_SELECTOR =
   'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="checkbox"], [role="menuitem"], [role="option"], [role="radio"], [role="switch"], [role="tab"], [contenteditable="true"]';
 let setCapturedUserEmail: ((email: string) => void) | null = null;
@@ -167,7 +166,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
       capturedInteractions: [] as CapturedInteraction[],
       interactionCount: 0,
       queuedInteractionCount: -1,
-      queuedCapturedInteractionCount: 0,
       pendingBatches: [] as string[],
       uploadError: undefined as Error | undefined,
       userEmail,
@@ -175,7 +173,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
       uploadTimer: null as ReturnType<typeof setTimeout> | null,
       uploadChain: Promise.resolve(),
       droppedNetworkCount: 0,
-      droppedInteractionCount: 0,
       queuedContext: "",
     };
   }
@@ -274,7 +271,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
       page_started_at: performance.timeOrigin,
       previous_session_url: session.previousSessionUrl,
       dropped_network_count: session.droppedNetworkCount,
-      dropped_interaction_count: session.droppedInteractionCount,
+      dropped_interaction_count: 0,
     });
     const auxiliaryData: Artifact[] = [
       {
@@ -297,7 +294,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
                     page_started_at: performance.timeOrigin,
                     previous_session_url: session.previousSessionUrl,
                     dropped_network_count: session.droppedNetworkCount,
-                    dropped_interaction_count: session.droppedInteractionCount,
+                    dropped_interaction_count: 0,
                   },
                 ],
               },
@@ -314,8 +311,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
             },
           ]
         : []),
-      ...(session.capturedInteractions.length !==
-      session.queuedCapturedInteractionCount
+      ...(session.capturedInteractions.length > 0
         ? [
             {
               namespace: "interaction",
@@ -323,9 +319,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
               schema_version: 1,
               payload: {
                 version: 1,
-                interactions: session.capturedInteractions.slice(
-                  session.queuedCapturedInteractionCount,
-                ),
+                interactions: session.capturedInteractions,
               },
             },
           ]
@@ -372,11 +366,10 @@ export function initCapture(options: CaptureOptions): CaptureController {
       return;
     }
     session.queuedContext = context;
-    // Serialized batches own retries; do not retain the uploaded network history.
+    // Serialized batches own retries; do not retain the uploaded recording history.
     session.capturedExchanges = [];
     session.queuedInteractionCount = session.interactionCount;
-    session.queuedCapturedInteractionCount =
-      session.capturedInteractions.length;
+    session.capturedInteractions = [];
     session.queuedUserEmail = session.userEmail;
     session.pendingBatches.push(...batches);
     const failed: string[] = [];
@@ -436,10 +429,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
     const session = captureSession();
     if (!session) return;
     if (countsAsSessionInteraction(event)) session.interactionCount++;
-    if (session.capturedInteractions.length >= MAX_CAPTURED_INTERACTIONS) {
-      session.droppedInteractionCount++;
-      return uploadCapture(session);
-    }
     const path = event
       .composedPath()
       .filter((item): item is Element => item instanceof Element);
