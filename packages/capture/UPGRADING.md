@@ -32,6 +32,18 @@ For the current complete setup contract, see
 https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md.
 Use it to reconcile the existing integration; do not treat an upgrade as a new setup.
 
+## 0.1.4 — No cumulative network capture limit
+
+The recorder no longer stops saving network exchanges after 8 MB or 5,000
+requests. Uploaded exchanges are released from the capture queue; failed batches
+retain their payloads and event IDs for retry. The configurable per-exchange
+`maxNetworkCaptureBytes` limit is unchanged.
+
+No application-code migration is required. Update the dependency and lockfile,
+then verify a session with more than 8 MB of individually permitted exchanges
+still delivers later requests. Previously dropped responses cannot be recovered
+by upgrading; validation requires a new recording.
+
 ## 0.1.3 — Packaged upgrade instructions
 
 No runtime integration changes beyond the migrations below. This release includes

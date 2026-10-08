@@ -77,7 +77,6 @@ type CapturedInteraction = {
   inputType?: string;
 };
 
-const MAX_CAPTURE_BYTES = 8_000_000;
 const MAX_CAPTURED_INTERACTIONS = 5_000;
 const ACTIONABLE_SELECTOR =
   'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="checkbox"], [role="menuitem"], [role="option"], [role="radio"], [role="switch"], [role="tab"], [contenteditable="true"]';
@@ -166,9 +165,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
       previousSessionUrl,
       capturedExchanges: [] as CapturedExchange[],
       capturedInteractions: [] as CapturedInteraction[],
-      capturedBytes: 0,
       interactionCount: 0,
-      queuedExchangeCount: 0,
       queuedInteractionCount: -1,
       queuedCapturedInteractionCount: 0,
       pendingBatches: [] as string[],
@@ -267,7 +264,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
 
   async function drainCaptureUpload(session: CaptureSession): Promise<void> {
     const exchanges = session.capturedExchanges
-      .slice(session.queuedExchangeCount)
       .map(
         ({ startup_body: _body, status_text: _status, ...exchange }) =>
           exchange,
@@ -285,7 +281,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.3" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.4" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
@@ -376,7 +372,8 @@ export function initCapture(options: CaptureOptions): CaptureController {
       return;
     }
     session.queuedContext = context;
-    session.queuedExchangeCount = session.capturedExchanges.length;
+    // Serialized batches own retries; do not retain the uploaded network history.
+    session.capturedExchanges = [];
     session.queuedInteractionCount = session.interactionCount;
     session.queuedCapturedInteractionCount =
       session.capturedInteractions.length;
@@ -566,18 +563,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
       const clone = response.clone();
       const responseBytes = await clone.arrayBuffer().catch(() => null);
       const capturedRequestBody = await requestBody;
-      const exchangeBytes =
-        (responseBytes?.byteLength ?? 0) +
-        new TextEncoder().encode(capturedRequestBody ?? "").byteLength;
-      if (
-        session.capturedBytes + exchangeBytes > MAX_CAPTURE_BYTES ||
-        session.capturedExchanges.length >= 5_000
-      ) {
-        session.droppedNetworkCount++;
-        uploadCapture(session);
-        return;
-      }
-
       const exchange: CapturedExchange = {
         id: exchangeId,
         captured_at: capturedAt,
@@ -608,7 +593,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
         uploadCapture(session);
         return;
       }
-      session.capturedBytes += exchangeBytes;
       session.capturedExchanges.push(exchange);
       uploadCapture(session);
       if (!stopped && fullStoryReady && exchange.startup_body) {

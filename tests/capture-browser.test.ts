@@ -486,20 +486,58 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       ),
     );
 
+    const beforeLongCapture = uploads.length;
     responseBody = "x".repeat(200_000);
     for (let i = 0; i < 42; i++) {
       await fakeWindow.fetch(`https://example.test/budget/${i}`);
-      await flush();
+      await capture.flush();
     }
-    const capped = uploads
-      .map((b) => UploadSchema.parse(JSON.parse(b)))
-      .filter((b) => b.session_url === sessionUrl)
-      .flatMap((b) => b.auxiliary_data)
+    // Small requests must also continue beyond the former lifetime count limit.
+    responseBody = "small";
+    for (let i = 0; i < 5_001; i++) {
+      await fakeWindow.fetch(`https://example.test/long-session/${i}`);
+      if (i % 100 === 0) await capture.flush();
+    }
+    await capture.flush();
+    const longArtifacts = uploads
+      .slice(beforeLongCapture)
+      .flatMap((b) => UploadSchema.parse(JSON.parse(b)).auxiliary_data);
+    const longExchanges = longArtifacts
+      .filter((a) => a.namespace === "network")
+      .flatMap((a) => NetworkAuxiliaryPayloadSchema.parse(a.payload).exchanges);
+    assert.equal(
+      longExchanges.filter((e) => e.url.includes("/budget/")).length,
+      42,
+    );
+    assert.ok(
+      longExchanges
+        .filter((e) => e.url.includes("/budget/"))
+        .every((e) => e.response_body === "x".repeat(200_000)),
+    );
+    assert.equal(
+      longExchanges.filter((e) => e.url.includes("/long-session/")).length,
+      5_001,
+    );
+    assert.equal(
+      new Set(longExchanges.map((e) => e.id)).size,
+      longExchanges.length,
+      "completed batches must not be uploaded again",
+    );
+    const lastContext = longArtifacts
       .filter((a) => a.key === "capture-context")
       .at(-1);
-    assert.ok(
-      ContextSchema.parse(capped?.payload).pages[0]!.dropped_network_count > 0,
-    );
+    if (lastContext) {
+      const previousContext = afterOversized
+        .filter((a) => a.key === "capture-context")
+        .at(-1);
+      assert.equal(
+        ContextSchema.parse(lastContext.payload).pages[0]!
+          .dropped_network_count,
+        ContextSchema.parse(previousContext?.payload).pages[0]!
+          .dropped_network_count,
+        "long sessions must not increase the dropped exchange count",
+      );
+    }
     for (let i = 0; i < 5_001; i++)
       listeners.get("click")!({
         type: "click",
