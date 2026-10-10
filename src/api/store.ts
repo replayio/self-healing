@@ -111,11 +111,12 @@ export function createStore(query: Query): Store {
     },
   };
 }
-export function getStore(): Store {
+export function getQuery(): Query {
   if (!process.env.DATABASE_URL) throw new Error("Database is not configured");
   const sql = neon(process.env.DATABASE_URL);
-  return createStore(
-    async (text, values) =>
-      (await sql(text, values)) as Record<string, unknown>[],
-  );
+  return async (text, values) =>
+    (await sql(text, values)) as Record<string, unknown>[];
+}
+export function getStore(): Store {
+  return createStore(getQuery());
 }

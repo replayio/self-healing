@@ -6,7 +6,7 @@ import { neon } from "@neondatabase/serverless";
 import { z } from "zod";
 import { credentialVault } from "./credentials.ts";
 import { HttpError } from "./errors.ts";
-import { qaClient } from "./qa.ts";
+import { qaClient, type QAClient } from "./qa.ts";
 import { sessionService } from "./sessions.ts";
 import type { Query } from "./store.ts";
 
@@ -31,6 +31,7 @@ export function connectionService(
   qa = qaClient(),
   vault = credentialVault(),
   origin = process.env.SELF_HEALING_URL ?? "https://self-healing.replay.io",
+  authorizeWork?: (accountId: string) => Promise<void>,
 ) {
   const get = async (account: string) => {
     const [row] = await query(
@@ -47,7 +48,7 @@ export function connectionService(
     qa_project_id: c.qa_project_id,
     status: c.ready ? ("connected" as const) : ("pending" as const),
   });
-  const sessions = sessionService(query, qa, vault, origin);
+  const sessions = sessionService(query, qa, vault, origin, authorizeWork);
   const summaryPath = (c: Connection) =>
     `/api/project-session-summarizers?project_id=${encodeURIComponent(c.qa_project_id!)}`;
   return {
@@ -248,7 +249,7 @@ export function connectionService(
     callback: sessions.callback,
   };
 }
-export function getConnectionService(qaToken?: string) {
+export function getConnectionService(qaToken?: string, client?: QAClient) {
   if (!process.env.DATABASE_URL)
     throw new HttpError(
       503,
@@ -258,6 +259,6 @@ export function getConnectionService(qaToken?: string) {
   const sql = neon(process.env.DATABASE_URL);
   return connectionService(
     async (text, values) => await sql(text, values),
-    qaClient({ ...process.env, REPLAY_QA_API_TOKEN: qaToken }),
+    client ?? qaClient({ ...process.env, REPLAY_QA_API_TOKEN: qaToken }),
   );
 }

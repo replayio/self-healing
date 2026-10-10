@@ -5,7 +5,7 @@ import {
   DashboardSessionSnapshot,
 } from "./contracts.ts";
 import { HttpError } from "./errors.ts";
-import type { qaClient } from "./qa.ts";
+import type { QAClient } from "./qa.ts";
 import type { Connection } from "./connections.ts";
 import { normalizeSessionUrl } from "./sessions.ts";
 import { sessionSightmap } from "./session-sightmap.ts";
@@ -39,7 +39,7 @@ const Tool = z.object({
 // Same review-open / review-zoom / review-snapshot protocol used by QA's Subtext source.
 // Evidence is transient: no session recordings are persisted and credentials stay server-side.
 export function dashboardSessions(
-  qa: ReturnType<typeof qaClient>,
+  qa: QAClient,
   key: string,
   request: typeof fetch = fetch,
 ) {

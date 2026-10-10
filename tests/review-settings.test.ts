@@ -121,6 +121,13 @@ test("deployment upgrades only ready account-owned connections with the correspo
       [reviewers, reviewers],
     );
     assert.equal(await upgradeSessionReviews(query, client), 2);
+    assert.equal(
+      await upgradeSessionReviews(query, async (id) => {
+        if (id === ids[1]) return null;
+        return client(id);
+      }),
+      1,
+    );
   } finally {
     await db.close();
   }

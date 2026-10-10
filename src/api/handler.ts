@@ -9,7 +9,12 @@ import {
 import { dashboardData } from "./dashboard-data.ts";
 import { pipelineData } from "./pipeline.ts";
 import { BugUpdateInput, FixPrInput, VerificationInput } from "./contracts.ts";
-import { qaClient } from "./qa.ts";
+import {
+  accountServiceResolver,
+  type AccountServiceResolver,
+} from "./account-services.ts";
+import { getDataConfigStore } from "./data-config.ts";
+import { DataConfigInput, DataConfigStatus } from "./contracts.ts";
 import { getAccountService } from "./accounts.ts";
 import { getConnectionService } from "./connections.ts";
 import { randomUUID } from "node:crypto";
@@ -51,6 +56,8 @@ async function readBody(request: Request): Promise<unknown> {
 }
 export function createHandler(
   dependencies: {
+    services?: AccountServiceResolver;
+    dataConfigs?: typeof getDataConfigStore;
     store?: () => Store;
     serviceErrors?: typeof getServiceErrorStore;
     authenticate?: Authenticator;
@@ -63,6 +70,8 @@ export function createHandler(
     fixPrs?: typeof getFixPrStore;
   } = {},
 ) {
+  const resolveServices =
+    dependencies.services ?? accountServiceResolver(dependencies);
   return async (request: Request): Promise<Response> => {
     const requestId = randomUUID();
     let errorAccount: string | null = null;
@@ -222,6 +231,17 @@ export function createHandler(
       // Only retain the validated bug identifier, never request bodies or URLs.
       const bugContext = (body ?? query ?? {}) as { bug_id?: string };
       errorBug = pathValues.bug_id ?? bugContext.bug_id ?? null;
+      if (
+        operation.id === "getDataConfig" ||
+        operation.id === "putDataConfig"
+      ) {
+        const configs = (dependencies.dataConfigs ?? getDataConfigStore)();
+        const status =
+          operation.id === "getDataConfig"
+            ? await configs.status(account)
+            : await configs.put(account, DataConfigInput.parse(body));
+        return json(DataConfigStatus.parse(status));
+      }
       if (operation.id === "createDashboardSession") {
         const connection = await (
           dependencies.connections ?? getConnectionService
@@ -237,12 +257,8 @@ export function createHandler(
         );
       }
       if (operation.pipeline) {
-        const credentials = await (
-          dependencies.accounts ?? getAccountService
-        )().credentials(account);
-        const connection = await (
-          dependencies.connections ?? getConnectionService
-        )(credentials.qaToken).get(account);
+        const services = await resolveServices(account);
+        const connection = await services.connections.get(account);
         if (!connection.ready)
           throw new HttpError(
             409,
@@ -250,10 +266,7 @@ export function createHandler(
             "Finish connection setup first.",
           );
         const data = (dependencies.pipelineData ?? pipelineData)(
-          qaClient({
-            ...process.env,
-            REPLAY_QA_API_TOKEN: credentials.qaToken,
-          }),
+          services.qa,
           undefined,
           dependencies.fixPrs ?? getFixPrStore,
         );
@@ -287,25 +300,18 @@ export function createHandler(
         return json(operation.response.parse(result), operation.status ?? 200);
       }
       if (operation.dashboard) {
-        const credentials = await (
-          dependencies.accounts ?? getAccountService
-        )().credentials(account);
-        const connection = await (
-          dependencies.connections ?? getConnectionService
-        )(credentials.qaToken).get(account);
+        const services = await resolveServices(account);
+        const connection = await services.connections.get(account);
         if (!connection.ready)
           throw new HttpError(
             409,
             "connection_pending",
             "Finish connection setup first.",
           );
-        const qa = qaClient({
-          ...process.env,
-          REPLAY_QA_API_TOKEN: credentials.qaToken,
-        });
+        const qa = services.qa;
         const sessionData = (
           dependencies.dashboardSessions ?? dashboardSessions
-        )(qa, credentials.subtextKey);
+        )(qa, services.subtextKey);
         const data = (dependencies.dashboardData ?? dashboardData)(
           qa,
           Date.now(),
@@ -348,14 +354,10 @@ export function createHandler(
           `${operation.id} requires a provider adapter that is not implemented yet.`,
         );
       if (operation.path.startsWith("/api/v1/connection")) {
-        const credentials = await (
-          dependencies.accounts ?? getAccountService
-        )().credentials(account);
-        const service = (dependencies.connections ?? getConnectionService)(
-          credentials.qaToken,
-        );
+        const services = await resolveServices(account);
+        const service = services.connections;
         if (operation.id === "connect") {
-          const key = credentials.subtextKey;
+          const key = services.subtextKey;
           return json(
             await service.connect(
               account,
