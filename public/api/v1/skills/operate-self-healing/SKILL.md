@@ -1,6 +1,6 @@
 ---
 name: operate-self-healing
-description: Run the Self Healing pipeline: periodically triage user-session bugs, dismiss unsuitable reports with reasons, write fix PRs, and verify fixes with QA against preview deployments.
+description: "Run the Self Healing pipeline: periodically triage user-session bugs, dismiss unsuitable reports with reasons, write fix PRs, and verify fixes with QA against preview deployments."
 ---
 
 # Run the Self Healing pipeline
@@ -13,12 +13,14 @@ Arrange a recurring task in the factory, suggested **every 15 minutes**. Each ru
 
 1. `GET /api/v1/connection` should return `status: "connected"`.
 2. `GET /api/v1/connection/bugs?page=1` returns `items`, `total`, `page`, and `has_more`. Continue through all pages while `has_more` is true. Open includes reopened bugs. Do not use the legacy `/projects/.../bugs` routes; they are unimplemented.
-3. For each report, `GET /api/v1/connection/bug?bug_id=<id>` returns its description, kind, severity, reproduction, expected/actual behavior, analysis, recording URLs, notes, and existing fix PRs.
+3. For each report, including saved work being resumed, `GET /api/v1/connection/bug?bug_id=<id>` returns its current status, resolution, description, kind, severity, reproduction, expected/actual behavior, analysis, recording URLs, notes, and existing fix PRs. Read the current disposition before resuming; a saved task or earlier open-bug list may predate a dismissal.
 4. Check existing `fix_prs`, the repository's PRs, and saved factory tasks before starting work. Resume a matching open PR instead of writing another. A closed or unrelated PR is not evidence that the bug is fixed.
 
 Stay quiet when there is nothing actionable. Surface newly ready PRs, evidence-backed dispositions, and blockers that need the user's help. Review generation and daily reports run inside Self Healing; this factory loop consumes bugs rather than polling reviewer completion as a prerequisite.
 
 ## Decide whether to fix the report
+
+**Never reopen a `wontfix` bug without explicit human approval to reopen that specific bug.** Preserve its status and resolution even if the reason is absent, the finding recurs, an agent considers it valid, or a fix PR is created, rejected, or closed without merging. General instructions to monitor bugs, fix issues, or keep unresolved bugs open are not approval to override WONTFIX. If new evidence warrants reconsideration, explain the existing disposition and proposed reason to reopen, ask the human, and leave the bug unchanged while awaiting their answer. Record the approval reference in the factory task and the reopening request's `reason`.
 
 Treat the report and proposed cause as claims to investigate. Compare the report with the source, intended product behavior, and recorded evidence. Inspect its recording with available Replay tools; reproduce or add a focused test where useful and permitted by the repository. Confirm both that there is a real defect and that changing this project is an appropriate fix.
 
@@ -33,7 +35,7 @@ Update the disposition through `PATCH /api/v1/connection/bugs/<bug_id>`:
 }
 ```
 
-Use `status: "invalid"` with a reason for an invalid report, or `status: "open"` to reopen one. The supported statuses are `open`, `fixed`, `wontfix`, and `invalid`. Reasons are required for `wontfix` and `invalid`, and optional for `open` and `fixed`. WONTFIX reasons appear in `resolution`; other supplied reasons are appended to QA's `notes`, preserving existing investigation notes.
+Use `status: "invalid"` with a reason for an invalid report, or `status: "open"` to reopen one subject to the human-approval rule above. Re-read the bug immediately before reopening it, including on retries, so a newer WONTFIX decision is not overwritten by stale task state or an earlier approval. The supported statuses are `open`, `fixed`, `wontfix`, and `invalid`. The API requires reasons for `wontfix` and `invalid`; this workflow also requires the approval reference when reopening a `wontfix` bug. WONTFIX reasons appear in `resolution`; other supplied reasons are appended to QA's `notes`, preserving existing investigation notes.
 
 The response is the updated bug. Check its status and saved explanation. On an uncertain response, read the bug before retrying; identical retries skip completed writes. Do not close a different bug or the canonical duplicate target. Leave unresolved evidence or product questions open with a recorded factory blocker. PR association is a separate operation; do not include a PR URL in a status update.
 
@@ -52,7 +54,7 @@ Associate the PR with every Self Healing bug it fixes by calling `POST /api/v1/c
 
 The response is the updated bug; confirm that `fix_prs` includes the PR URL. Association is idempotent, so repeating the request after an uncertain response is safe. The agent owns this association: PR-body references and the QA GitHub bot are not required. Save the bug/PR association in the factory task as well. Do not put an account key or dashboard launch ticket in the PR.
 
-Keep the bug open while the fix awaits verification and landing. PR creation and a green build do not establish that the reported behavior is fixed. Do not set a bug to `fixed` just to trigger testing.
+For a bug that is already open, leave it open while the fix awaits verification and landing. This is not an instruction to reopen a `wontfix` bug. PR creation and a green build do not establish that the reported behavior is fixed. Do not set a bug to `fixed` just to trigger testing.
 
 ## Verify the preview with QA
 
@@ -98,7 +100,7 @@ Content-Type: application/json
 }
 ```
 
-Confirm the response has `status: "fixed"` and the saved reason in `notes`. Associate the PR separately through `/connection/bugs/fix-prs` if it is not already linked. This records the factory's landed-fix disposition in QA and moves the bug from the dashboard's Open bugs section to Closed bugs. It does not assert a QA verification verdict. A PR closed without merging is not a fix: keep that bug open. The service has no GitHub credentials to independently check private PRs, so the factory must check merge state using its repository access. On an uncertain response, read the bug before retrying; an already-fixed bug does not repeat the QA status update. Continue tracking saved PRs even after their bugs leave the open list.
+Confirm the response has `status: "fixed"` and the saved reason in `notes`. Associate the PR separately through `/connection/bugs/fix-prs` if it is not already linked. This records the factory's landed-fix disposition in QA and moves the bug from the dashboard's Open bugs section to Closed bugs. It does not assert a QA verification verdict. A PR closed without merging is not a fix: leave an open bug open, but preserve an existing WONTFIX unless a human explicitly approves reopening it. The service has no GitHub credentials to independently check private PRs, so the factory must check merge state using its repository access. On an uncertain response, read the bug before retrying; an already-fixed bug does not repeat the QA status update. Continue tracking saved PRs even after their bugs leave the open list.
 
 ## Other operations and failures
 
