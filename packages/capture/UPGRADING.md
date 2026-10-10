@@ -32,6 +32,17 @@ For the current complete setup contract, see
 https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md.
 Use it to reconcile the existing integration; do not treat an upgrade as a new setup.
 
+## 0.1.5 — Original network timing
+
+Network exchanges now include `timing.response_ms` (dispatch to response headers)
+and, when the cloned response body completes, `timing.total_ms` (dispatch to body
+completion). Both use the same monotonic clock; request-body capture and upload
+work happen after the completion timestamp. Failed body reads leave total timing
+unavailable. Existing recordings cannot gain timing retroactively.
+
+Update the dependency and lockfile; no integration-code migration is required.
+QA must preserve these fields and use them when analyzing reconstructed sessions.
+
 ## 0.1.4 — No cumulative capture limits
 
 The recorder no longer stops saving network exchanges after 8 MB or 5,000
