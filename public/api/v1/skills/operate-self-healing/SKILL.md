@@ -20,11 +20,9 @@ Stay quiet when there is nothing actionable. Surface newly ready PRs, evidence-b
 
 ## Decide whether to fix the report
 
-Never reopen a `wontfix` bug without explicit approval from a human to reopen that specific bug.
-
 Treat the report and proposed cause as claims to investigate. Compare the report with the source, intended product behavior, and recorded evidence. Inspect its recording with available Replay tools; reproduce or add a focused test where useful and permitted by the repository. Confirm both that there is a real defect and that changing this project is an appropriate fix.
 
-Use `invalid` when evidence establishes a false positive or expected behavior. Use `wontfix` for a real issue intentionally left unfixed or a duplicate already covered by other work. Both require a concrete reason and supporting evidence. For a duplicate, name the canonical bug and covering PR and explain why they cover this reproduction. If the product decision is unclear, ask the user; do not invent a reason to dismiss it. Missing access, an unavailable recording, a QA failure, or failure to reproduce alone is not evidence for dismissal.
+Use `invalid` when evidence establishes a false positive or expected behavior. Use `wontfix` for a real issue intentionally left unfixed or a duplicate already covered by other work. Both require a concrete reason and supporting evidence. Never reopen a `wontfix` bug without explicit approval from a human to reopen that specific bug. For a duplicate, name the canonical bug and covering PR and explain why they cover this reproduction. If the product decision is unclear, ask the user; do not invent a reason to dismiss it. Missing access, an unavailable recording, a QA failure, or failure to reproduce alone is not evidence for dismissal.
 
 Update the disposition through `PATCH /api/v1/connection/bugs/<bug_id>`:
 
