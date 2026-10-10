@@ -39,6 +39,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
     let failNext = false;
     let sessionUrl = "https://app.fullstory.com/session/test";
     let rejectedBatchStatus = 0;
+    let monotonicNow = 403;
     let responseBody: BodyInit = '{"user":null}';
     let terminalFailure = false;
     let releaseSlow: (() => void) | undefined;
@@ -89,13 +90,28 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
           }
           return new Response("", { status: 202 });
         }
+        monotonicNow += 37;
         if (url.endsWith("/slow"))
           await new Promise<void>((resolve) => {
             releaseSlow = resolve;
           });
-        return new Response(responseBody, {
+        const response = new Response(responseBody, {
           headers: { "Content-Type": "application/json" },
         });
+        if (url.endsWith("/api/auth-me")) {
+          const clone = response.clone.bind(response);
+          response.clone = () => {
+            const copy = clone();
+            const read = copy.arrayBuffer.bind(copy);
+            copy.arrayBuffer = async () => {
+              const bytes = await read();
+              monotonicNow += 83;
+              return bytes;
+            };
+            return copy;
+          };
+        }
+        return response;
       },
       addEventListener(name: string, callback: (event: unknown) => void) {
         listeners.set(name, callback);
@@ -150,7 +166,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       InputEvent: FakeInputEvent,
       ClipboardEvent: FakeClipboardEvent,
       crypto: { randomUUID },
-      performance: { now: () => 403, timeOrigin: 1000 },
+      performance: { now: () => monotonicNow, timeOrigin: 1000 },
       setTimeout(callback: () => void, delay: number) {
         if (delay !== 250) {
           queueMicrotask(callback);
@@ -239,6 +255,10 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
         await new Promise((resolve) => setImmediate(resolve));
       }
     }
+    const measured = startupEntries.find(e => e.url.endsWith("/startup/slow"));
+    const timing = z.object({ response_ms: z.number(), total_ms: z.number() }).parse(measured?.timing);
+    assert.ok(timing.response_ms >= 37);
+    assert.ok(timing.total_ms >= timing.response_ms);
     await fakeWindow.fetch("https://example.test/api/auth-me");
     failNext = true;
     await flush();
@@ -268,7 +288,8 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       entries[1]?.[0]?.id,
       "identical requests are distinct events",
     );
-    assert.equal(entries[0]?.[0]?.captured_at, 1403);
+    assert.equal(entries[0]?.[0]?.captured_at, 1440);
+    assert.deepEqual(entries[0]?.[0]?.timing, { response_ms: 37, total_ms: 120 });
     const target = new FakeElement();
     const exact = "https://testflair.ai/?x=1&y=2\n  café 🦊 ";
     for (const type of ["keydown", "paste", "input", "keyup", "input"]) {

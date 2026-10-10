@@ -64,3 +64,9 @@ current session context and metrics are sent after retries so an older batch can
 `flush()` rejects while any batch remains undelivered, and succeeds once they have all been accepted.
 
 Release tests and builds print concise progress; their full output is shown only if they fail.
+
+Captured network exchanges include optional `timing: { response_ms, total_ms? }` in
+milliseconds from dispatch. The producer measures response headers and cloned-body
+completion with `performance.now()`, before waiting on request-body capture or
+upload work. A failed body read omits `total_ms`; zero is a valid duration. These
+are original-session measurements, independent of how long a reconstruction takes.
