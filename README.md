@@ -18,6 +18,8 @@ Factories call `POST /api/v1/dashboard-sessions` with their account bearer key a
 
 Setup looks for an existing project reporting destination and asks the user when a suitable channel, recipient, or credential is missing. `GET` and `PATCH /api/v1/connection/report-destinations` configure email, Slack, or Discord through the connected QA project's existing delivery API. Only supplied channels change; webhook URLs are write-only. QA owns storage and delivery of completed daily reports. No new Self Healing secrets, tables, or delivery worker are needed.
 
+The default writing prompt in `src/api/connections.ts` asks for a 2–3 sentence overview and at most 12 concise, titled findings, prioritized by user impact and supported by evidence. It is saved in QA during connection setup. Changes to this default apply to newly configured summarizers; existing connections retain their saved prompts, including custom instructions. To change an existing report's instructions, an authorized QA project editor can edit the **Daily user behavior** summarizer's **Settings → Summary prompt**. Self Healing's read-only dashboard does not expose this setting. Prompt edits affect future generations, not previously saved reports.
+
 ## Capture package
 
 All installation instructions live in the [Self Healing setup skill](public/api/v1/skills/setup-self-healing/SKILL.md). [`@replayio/self-healing-capture`](packages/capture/README.md) temporarily supplies auxiliary capture until Subtext has the required accessors. QA consumes compatible artifacts without importing the package; session configuration is API-only. See the package README for contributor release instructions.
