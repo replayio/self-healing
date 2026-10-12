@@ -6,6 +6,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
 import { operations } from "../src/api/contracts.ts";
+import * as redaction from "../packages/capture/src/redaction.ts";
 import * as transport from "../packages/capture/src/transport.ts";
 const NetworkAuxiliaryPayloadSchema = z.object({
   exchanges: z.array(
@@ -149,7 +150,11 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
     runInNewContext(output, {
       exports,
       require: (name: string) =>
-        name === "@fullstory/browser" ? sdk : transport,
+        name === "@fullstory/browser"
+          ? sdk
+          : name.includes("redaction")
+            ? redaction
+            : transport,
       window: fakeWindow,
       URL,
       Request,
@@ -193,7 +198,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
             orgId: "test",
             maxNetworkCaptureBytes: invalid,
           }),
-        /positive safe integer/,
+        /safe integer of at least 1024 bytes/,
       );
     }
     const capture = exports.initCapture!({
@@ -255,8 +260,12 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
         await new Promise((resolve) => setImmediate(resolve));
       }
     }
-    const measured = startupEntries.find(e => e.url.endsWith("/startup/slow"));
-    const timing = z.object({ response_ms: z.number(), total_ms: z.number() }).parse(measured?.timing);
+    const measured = startupEntries.find((e) =>
+      e.url.endsWith("/startup/slow"),
+    );
+    const timing = z
+      .object({ response_ms: z.number(), total_ms: z.number() })
+      .parse(measured?.timing);
     assert.ok(timing.response_ms >= 37);
     assert.ok(timing.total_ms >= timing.response_ms);
     await fakeWindow.fetch("https://example.test/api/auth-me");
@@ -289,7 +298,10 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       "identical requests are distinct events",
     );
     assert.equal(entries[0]?.[0]?.captured_at, 1440);
-    assert.deepEqual(entries[0]?.[0]?.timing, { response_ms: 37, total_ms: 120 });
+    assert.deepEqual(entries[0]?.[0]?.timing, {
+      response_ms: 37,
+      total_ms: 120,
+    });
     const target = new FakeElement();
     const exact = "https://testflair.ai/?x=1&y=2\n  café 🦊 ";
     for (const type of ["keydown", "paste", "input", "keyup", "input"]) {
@@ -497,15 +509,16 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
     const networkAfter = afterOversized
       .filter((a) => a.namespace === "network")
       .flatMap((a) => a.payload.exchanges);
-    assert.ok(!networkAfter.some((e) => e.url.endsWith("/oversized-exchange")));
-    assert.ok(networkAfter.some((e) => e.url.endsWith("/after-oversized")));
-    assert.ok(
-      afterOversized.some(
-        (a) =>
-          a.key === "capture-context" &&
-          a.payload.pages[0].dropped_network_count > 0,
-      ),
+    const oversized = networkAfter.find((e) =>
+      e.url.endsWith("/oversized-exchange"),
     );
+    assert.equal(oversized.redacted.response_body, true);
+    assert.ok(oversized.response_body.endsWith("[qa_redacted]"));
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(oversized)) <=
+        (maxNetworkCaptureBytes ?? 1_000_000),
+    );
+    assert.ok(networkAfter.some((e) => e.url.endsWith("/after-oversized")));
 
     const beforeLongCapture = uploads.length;
     responseBody = "x".repeat(200_000);
@@ -554,8 +567,10 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       assert.equal(
         ContextSchema.parse(lastContext.payload).pages[0]!
           .dropped_network_count,
-        ContextSchema.parse(previousContext?.payload).pages[0]!
-          .dropped_network_count,
+        previousContext
+          ? ContextSchema.parse(previousContext.payload).pages[0]!
+              .dropped_network_count
+          : 0,
         "long sessions must not increase the dropped exchange count",
       );
     }
