@@ -112,6 +112,7 @@ export interface Redaction {
   metadata?: true;
 }
 interface Exchange {
+  method: string;
   url: string;
   request_body: string | null;
   response_body: string | null;
@@ -160,9 +161,16 @@ export function redactExchange<T extends Exchange>(
     exchange.redacted.metadata = true;
     exchange.request_headers = {};
     exchange.response_headers = {};
+    if (bytes(exchange.method) > 128) exchange.method = MARKER;
     if (bytes(exchange) > limit) {
       const budget = limit - bytes(exchange) + bytes(exchange.url);
       exchange.url = shortenText(exchange.url, Math.max(bytes(MARKER), budget));
+      // Truncation inside an authority can produce an invalid URL (for example brackets in a host).
+      try {
+        new URL(exchange.url);
+      } catch {
+        exchange.url = "https://qa-redacted.invalid/";
+      }
     }
   }
   if (bytes(exchange) > limit)

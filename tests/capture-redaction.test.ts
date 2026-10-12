@@ -122,3 +122,17 @@ test("bounded exchanges across body ratios, escaping, and configurable limits", 
     }
   }
 });
+
+test("oversized URL authorities and method names remain ingestible", () => {
+  const reduced = redactExchange(
+    {
+      ...exchange("ok"),
+      url: "https://" + "a".repeat(5000) + ".test/",
+      method: "X".repeat(5000),
+    },
+    1024,
+  );
+  assert.ok(size(reduced) <= 1024);
+  assert.doesNotThrow(() => new URL(reduced.url));
+  assert.equal(reduced.redacted?.metadata, true);
+});
