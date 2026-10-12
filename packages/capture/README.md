@@ -22,6 +22,16 @@ QA consumes compatible versioned artifacts and recognizes the package/version pr
 ingestion and review code does not import this package. When Subtext supplies the required accessors,
 the Self Healing skills will describe the replacement and migration.
 
+## Oversized exchanges
+
+`maxNetworkCaptureBytes` bounds each serialized exchange (default 1,000,000 bytes;
+minimum 1,024). Oversized exchanges stay in the capture. Text retains a truncated
+prefix ending in `[qa_redacted]`; JSON replaces the largest string values and, when
+needed, object/array subtrees with that marker. Small fields are preserved when possible.
+`redacted.request_body`, `redacted.response_body`, and `redacted.metadata` identify
+modified fields. Extremely large headers or URLs are reduced as a last resort.
+QA uses these records as evidence for session replay configuration, not exact responses.
+
 ## Development and release
 
 The capture implementation lives in `packages/capture/src`. Change producers here and keep QA’s

@@ -1,3 +1,4 @@
+import { redactExchange, type Redaction } from "./redaction.js";
 import { FullStory, init } from "@fullstory/browser";
 import {
   decodeCaptureBody,
@@ -42,6 +43,7 @@ function countsAsSessionInteraction(event: Event): boolean {
 }
 
 type CapturedExchange = {
+  redacted?: Redaction;
   id: string;
   captured_at: number;
   source_timestamp: number;
@@ -109,9 +111,11 @@ export function initCapture(options: CaptureOptions): CaptureController {
     options.maxNetworkCaptureBytes ?? DEFAULT_MAX_NETWORK_CAPTURE_BYTES;
   if (
     !Number.isSafeInteger(maxNetworkCaptureBytes) ||
-    maxNetworkCaptureBytes <= 0
+    maxNetworkCaptureBytes < 1024
   )
-    throw new Error("maxNetworkCaptureBytes must be a positive safe integer");
+    throw new Error(
+      "maxNetworkCaptureBytes must be a safe integer of at least 1024 bytes",
+    );
   if (active) {
     if (
       options.orgId !== activeOptions?.orgId ||
@@ -279,7 +283,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.5" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.6" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
@@ -555,13 +559,17 @@ export function initCapture(options: CaptureOptions): CaptureController {
       const clone = response.clone();
       const responseBytes = await clone.arrayBuffer().catch(() => null);
       // Stamp body completion before waiting on request capture or serializing/uploading.
-      const totalMs = responseBytes === null ? undefined : performance.now() - started;
+      const totalMs =
+        responseBytes === null ? undefined : performance.now() - started;
       const capturedRequestBody = await requestBody;
       const exchange: CapturedExchange = {
         id: exchangeId,
         captured_at: capturedAt,
         source_timestamp: sourceTimestamp,
-        timing: { response_ms: responseMs, ...(totalMs === undefined ? {} : { total_ms: totalMs }) },
+        timing: {
+          response_ms: responseMs,
+          ...(totalMs === undefined ? {} : { total_ms: totalMs }),
+        },
         method: request.method,
         url: request.url,
         status: clone.status,
@@ -580,15 +588,8 @@ export function initCapture(options: CaptureOptions): CaptureController {
         status_text: _status,
         ...uploadedExchange
       } = exchange;
-      if (
-        new TextEncoder().encode(JSON.stringify(uploadedExchange)).byteLength >
-        maxNetworkCaptureBytes
-      ) {
-        session.droppedNetworkCount++;
-        uploadCapture(session);
-        return;
-      }
-      session.capturedExchanges.push(exchange);
+      const bounded = redactExchange(uploadedExchange, maxNetworkCaptureBytes);
+      session.capturedExchanges.push({ ...exchange, ...bounded });
       uploadCapture(session);
       if (!stopped && fullStoryReady && exchange.startup_body) {
         await replayForFullStory(exchange);

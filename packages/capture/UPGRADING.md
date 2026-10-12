@@ -32,6 +32,22 @@ For the current complete setup contract, see
 https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md.
 Use it to reconcile the existing integration; do not treat an upgrade as a new setup.
 
+## 0.1.6 — Retain oversized network exchanges
+
+Oversized exchanges are redacted to fit instead of dropped. Text bodies keep a
+truncated prefix ending in `[qa_redacted]`. JSON replaces its largest strings, then
+object/array subtrees if necessary, with `"[qa_redacted]"`. Request/response body
+redaction and last-resort metadata reduction are explicitly marked in `redacted`.
+
+Update the dependency and lockfile. If configured below 1,024 bytes, increase
+`maxNetworkCaptureBytes` to at least 1,024. QA must preserve the redaction markers
+and route incomplete responses through session replay configuration rules before
+this package is deployed. Verify an oversized JSON response retains small identity
+fields, stays valid JSON, and is uploaded with its redaction marker. Verify a large
+text response is truncated and subsequent requests continue to upload. Missing
+original bodies in old recordings cannot be restored by this upgrade; QA can use
+Subtext metadata and rendered fragments as evidence to configure replacement responses.
+
 ## 0.1.5 — Original network timing
 
 Network exchanges now include `timing.response_ms` (dispatch to response headers)
