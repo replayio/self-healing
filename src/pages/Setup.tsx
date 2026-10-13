@@ -37,6 +37,29 @@ export function SetupPage() {
         </p>
       </div>
 
+      <section
+        className="page-section setup-prerequisites"
+        aria-labelledby="setup-prerequisites"
+      >
+        <h2 id="setup-prerequisites">Before you paste the prompt</h2>
+        <p>
+          You’ll need an Obvious project and access to your app’s repository and
+          deployment configuration.
+        </p>
+        <p>
+          Subtext provides access to your FullStory sessions. Obtain a Subtext
+          API key through the{" "}
+          <a href="https://subtext.fullstory.com/">Subtext Get Started flow</a>,
+          then provide it through Obvious’s secure input. Do not paste
+          credentials into source code.
+        </p>
+        <p>
+          Your agent handles the integration and checks real session delivery.
+          Ongoing fix work also needs an active factory loop and a usable PR
+          preview. Your team stays in control of review and merging.
+        </p>
+      </section>
+
       <div className="setup-prompt">
         <div className="prompt-heading">
           <span className="prompt-label">OBVIOUS AGENT PROMPT</span>
@@ -101,7 +124,8 @@ export function SetupPage() {
         <h2>Resources</h2>
         <div className="skill-links">
           <Link to="/skills/setup-self-healing">
-            Setup skill <span>The walkthrough Obvious follows to set up the loop</span>
+            Setup skill{" "}
+            <span>The walkthrough Obvious follows to set up the loop</span>
           </Link>
           <Link to="/skills/operate-self-healing">
             Operation skill <span>Session reviews and daily reports</span>
