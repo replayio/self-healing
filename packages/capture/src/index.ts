@@ -141,6 +141,13 @@ export function initCapture(options: CaptureOptions): CaptureController {
   ) {
     throw new Error("Capture endpoint must be same-origin");
   }
+  // Snapshot the original browser environment once, before any replay or upload work.
+  let timezoneId: string | undefined;
+  try {
+    timezoneId = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    // An unavailable Intl implementation must not prevent session capture.
+  }
   const orgId = options.orgId;
   let stopped = false;
   let lastError: Error | undefined;
@@ -274,6 +281,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     const context = JSON.stringify({
       id: pageId,
       page_started_at: performance.timeOrigin,
+      timezone_id: timezoneId,
       previous_session_url: session.previousSessionUrl,
       dropped_network_count: session.droppedNetworkCount,
       dropped_interaction_count: 0,
@@ -283,7 +291,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.6" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.7" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
@@ -297,6 +305,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
                   {
                     id: pageId,
                     page_started_at: performance.timeOrigin,
+                    timezone_id: timezoneId,
                     previous_session_url: session.previousSessionUrl,
                     dropped_network_count: session.droppedNetworkCount,
                     dropped_interaction_count: 0,

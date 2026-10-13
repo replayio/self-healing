@@ -32,6 +32,13 @@ For the current complete setup contract, see
 https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md.
 Use it to reconcile the existing integration; do not treat an upgrade as a new setup.
 
+## 0.1.7 — Original browser timezone
+
+Each `session/capture-context` page now records the browser's IANA `timezone_id`.
+QA can use it to reproduce local date formatting, including daylight-saving rules,
+without project-specific replay settings. Older recordings cannot gain this metadata
+retroactively. Update the dependency and lockfile; no integration-code migration is required.
+
 ## 0.1.6 — Retain oversized network exchanges
 
 Oversized exchanges are redacted to fit instead of dropped. Text bodies keep a

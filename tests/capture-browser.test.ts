@@ -155,6 +155,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
           : name.includes("redaction")
             ? redaction
             : transport,
+      Intl: { DateTimeFormat: () => ({ resolvedOptions: () => ({ timeZone: "Asia/Kolkata" }) }) },
       window: fakeWindow,
       URL,
       Request,
@@ -420,6 +421,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       pages: z.array(
         z.object({
           id: z.string(),
+          timezone_id: z.string(),
           previous_session_url: z.string().nullable(),
           dropped_network_count: z.number(),
           dropped_interaction_count: z.number(),
@@ -434,6 +436,8 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
     const nextContext = ContextSchema.parse(
       freshArtifacts.find((a) => a.key === "capture-context")?.payload,
     );
+    assert.equal(initialContext.pages[0]?.timezone_id, "Asia/Kolkata");
+    assert.equal(nextContext.pages[0]?.timezone_id, initialContext.pages[0]?.timezone_id);
     assert.equal(nextContext.pages[0]?.previous_session_url, oldUrl);
     assert.equal(
       nextContext.pages[0]?.id,
