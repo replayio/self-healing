@@ -1,3 +1,4 @@
+import { managedDataConfigs } from "./helpers/account-services.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
@@ -152,6 +153,7 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
     );
     const providerCalls: string[] = [];
     const handler = createHandler({
+      dataConfigs: managedDataConfigs,
       authenticate: async (req) => {
         if (req.headers.get("authorization") !== "Bearer factory-key")
           throw new HttpError(401, "unauthorized", "API key required");

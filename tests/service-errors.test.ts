@@ -1,3 +1,4 @@
+import { managedDataConfigs } from "./helpers/account-services.ts";
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -38,6 +39,7 @@ const connection: Connection = {
   start_exploration: false,
 };
 const dependencies = {
+  dataConfigs: managedDataConfigs,
   authenticate: async () => ({ accountId: "account-a" }),
   accounts: () => ({
     ...accountService(async () => [], vault),

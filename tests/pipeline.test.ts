@@ -1,3 +1,4 @@
+import { managedDataConfigs } from "./helpers/account-services.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { pipelineData } from "../src/api/pipeline.ts";
@@ -408,6 +409,7 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
   const query = async () => [];
   const f = fixture();
   const handler = createHandler({
+    dataConfigs: managedDataConfigs,
     authenticate: async (req) => {
       if (req.headers.get("authorization") !== "Bearer factory")
         throw new HttpError(401, "unauthorized", "Account key required");

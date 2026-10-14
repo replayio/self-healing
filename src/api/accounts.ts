@@ -3,7 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import { z } from "zod";
 import { credentialVault } from "./credentials.ts";
 import { HttpError } from "./errors.ts";
-import { qaClient } from "./qa.ts";
+import { qaClient, type QAClient } from "./qa.ts";
 import { authenticateSubtext, type Authenticator } from "./subtext.ts";
 import type { Query } from "./store.ts";
 
@@ -29,7 +29,7 @@ export function accountService(
   query: Query,
   vault = credentialVault(),
   validate: Authenticator = authenticateSubtext,
-  provision?: ReturnType<typeof qaClient>,
+  provision?: QAClient,
 ) {
   const get = async (id: string) => {
     const [row] = await query("SELECT * FROM accounts WHERE id=$1", [id]);

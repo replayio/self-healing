@@ -15,6 +15,92 @@ const HttpsUrl = z
 const Timestamp = z.string().datetime();
 const Ref = z.string().trim().min(1).max(200);
 const object = z.object;
+// Service configuration is server-side access material, not a browser configuration.
+const ServiceEndpoint = z
+  .string()
+  .url()
+  .max(2048)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash
+      );
+    } catch {
+      return false;
+    }
+  }, "Use an HTTPS endpoint without credentials, query parameters, or a fragment");
+const ServiceSecret = z.string().min(1).max(16384);
+const ExternalService = object({
+  endpoint: ServiceEndpoint,
+  credential: ServiceSecret,
+}).strict();
+export const ExternalDataConfig = object({
+  mode: z.literal("external"),
+  retention: z.literal("zero"),
+  database: object({
+    adapter: z.literal("neon"),
+    connection_string: ServiceSecret.refine((value) => {
+      try {
+        return ["postgres:", "postgresql:"].includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    }, "Use a PostgreSQL connection string"),
+  }).strict(),
+  artifacts: ExternalService,
+  recordings: object({
+    upload: ExternalService,
+    api: ExternalService,
+    mcp: ExternalService,
+    dispatch: object({
+      endpoint: z
+        .string()
+        .url()
+        .max(2048)
+        .refine((value) => {
+          try {
+            const url = new URL(value);
+            return (
+              url.protocol === "wss:" &&
+              !url.username &&
+              !url.password &&
+              !url.search &&
+              !url.hash
+            );
+          } catch {
+            return false;
+          }
+        }, "Use a WSS endpoint without credentials, query parameters, or a fragment"),
+      credential: ServiceSecret,
+    }).strict(),
+  }).strict(),
+}).strict();
+export const DataConfigInput = object({
+  expected_revision: z.number().int().nonnegative().max(2147483646),
+  configuration: ExternalDataConfig,
+}).strict();
+// Read responses deliberately expose no service URLs or access material.
+export const DataConfigStatus = z.discriminatedUnion("mode", [
+  object({
+    mode: z.literal("managed"),
+    revision: z.literal(0),
+    availability: z.literal("available"),
+  }).strict(),
+  object({
+    mode: z.literal("external"),
+  retention: z.literal("zero"),
+    revision: z.number().int().positive(),
+    availability: z.literal("unsupported"),
+  }).strict(),
+]);
+export type ExternalAccountDataConfig = z.infer<typeof ExternalDataConfig>;
+export type AccountDataConfigStatus = z.infer<typeof DataConfigStatus>;
+
 export const ErrorResponse = object({
   error: object({ code: z.string(), message: z.string(), request_id: Id }),
 });
@@ -703,6 +789,28 @@ export const DashboardReports = z.object({
 });
 
 export const operations: Operation[] = [
+  {
+    id: "getDataConfig",
+    method: "GET",
+    path: "/api/v1/account/data-config",
+    summary: "Read account data-service configuration status",
+    implemented: true,
+    response: DataConfigStatus,
+    description:
+      "Reads QA-owned policy status: mode, retention, revision and adapter availability. Never returns connection strings, endpoints or credentials.",
+  },
+  {
+    id: "putDataConfig",
+    method: "PUT",
+    path: "/api/v1/account/data-config",
+    summary: "Store account data-service configuration in QA",
+    implemented: true,
+    body: DataConfigInput,
+    response: DataConfigStatus,
+    description:
+      "QA persists encrypted configuration in its main account database. Interface foundation only: external QA execution is not implemented. Selecting external mode blocks subsequent Self Healing QA calls with 501; it does not migrate data, stop already queued QA work, validate remote connectivity, or establish ZDR. expected_revision is 0 for initial configuration. Identical retries are idempotent. Switching back to managed storage is not supported.",
+  },
+
   {
     id: "pipelineBugs",
     method: "GET",

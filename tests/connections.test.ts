@@ -1,3 +1,4 @@
+import { managedDataConfigs } from "./helpers/account-services.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -12,7 +13,7 @@ import { qaClient } from "../src/api/qa.ts";
 const vault = credentialVault(Buffer.alloc(32, 7).toString("base64"));
 const settings = { name: "Example", production_url: "https://example.com" };
 const sessionUrl = "https://app.fullstory.com/ui/org/session/1";
-async function fixture() {
+async function fixture(authorizeWork: (account: string) => Promise<void> = async () => {}) {
   const db = new PGlite();
   for (const name of [
     "002_connections.sql",
@@ -95,6 +96,7 @@ async function fixture() {
     qa,
     vault,
     "https://healing.example",
+    authorizeWork,
   );
   const account = vault.identity("customer-key");
   return {
@@ -451,6 +453,7 @@ test("connection responses hide internal credentials and QA transport uses exist
   const f = await fixture();
   try {
     const handle = createHandler({
+      dataConfigs: managedDataConfigs,
       authenticate: async () => ({ accountId: f.account }),
       connections: () => f.service,
       accounts: () => ({
@@ -519,6 +522,7 @@ test("package producer metadata passes HTTP validation and is forwarded unchange
   try {
     await f.service.connect(f.account, "customer-key", settings);
     const handle = createHandler({
+      dataConfigs: managedDataConfigs,
       authenticate: async () => ({ accountId: f.account }),
       connections: () => f.service,
       accounts: () => ({
@@ -711,6 +715,7 @@ test("HTTP connection validates and returns the saved exploration choice", async
   const f = await fixture();
   try {
     const handler = createHandler({
+      dataConfigs: managedDataConfigs,
       authenticate: async () => ({ accountId: f.account }),
       connections: () => f.service,
       accounts: () => ({
@@ -806,6 +811,7 @@ test("callback failures return JSON with upstream status and bounded, redacted d
       { headers: { "mcp-session-id": "upstream-secret" } },
     );
     const handle = createHandler({
+      dataConfigs: managedDataConfigs,
       connections: () => ({
         ...f.service,
         callback: (id, token, request, body) =>
@@ -902,4 +908,20 @@ test("callback failures return JSON with upstream status and bounded, redacted d
   } finally {
     await f.db.close();
   }
+});
+
+
+test("authenticated session callbacks check account policy before provider access", async () => {
+  let checkedAccount = "";
+  const f = await fixture(async account => { checkedAccount = account; throw new Error("account work disabled"); });
+  try {
+    await f.service.connect(f.account, "customer-key", settings);
+    await f.service.action(f.account, "session", { session_url: sessionUrl });
+    const upload = f.calls.find(c => c.path === "/api/project-session/register")!.body as { source_callback_url: string };
+    const parts = new URL(upload.source_callback_url).pathname.split("/");
+    await assert.rejects(f.service.callback(parts[4]!, parts[6]!, new Request(upload.source_callback_url), {}, async () => {
+      assert.fail("blocked callback must not contact Subtext");
+    }), /account work disabled/);
+    assert.equal(checkedAccount, f.account);
+  } finally { await f.db.close(); }
 });
