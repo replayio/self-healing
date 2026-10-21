@@ -135,7 +135,9 @@ There is no global override or automatic endpoint probing. The `na1.` key prefix
 does not establish whether a key is for production or staging.
 
 Migration `009_subtext_endpoint.sql` preserves US production for existing accounts.
-Apply it before deployment. Recovery requires the original key and endpoint;
+The production workflow runs `scripts/migrate.ts`, which discovers this numbered
+SQL file automatically, before publishing to Netlify. A migration failure stops
+deployment; no manual production migration is needed. Recovery requires the original key and endpoint;
 reusing a provisioned key with a different endpoint returns 409 and does not change
 stored routing. This does not add credential rotation or endpoint mutation to an
 existing integration. Credentials remain encrypted with the existing keyed
