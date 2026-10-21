@@ -9,3 +9,6 @@ This is an initial Netlify/React/TypeScript service scaffold modeled on Loop QA.
 - Keep factory/provider secrets server-side. Connections store only AES-GCM encrypted Subtext credentials, bound to their keyed fingerprint; never store plaintext keys. Do not add session recording data to the coordination database.
 - Run relevant tests for changes. For the initial service, `npm test` covers the handler and real Postgres semantics through PGlite; `npm run build` checks TypeScript and the frontend.
 - Keep deployment and database migration explicit. Preview environments must not share production databases or credentials.
+
+For capture package publishing instructions or release assistance, use
+[the publish-capture skill](.agents/skills/publish-capture/SKILL.md).
