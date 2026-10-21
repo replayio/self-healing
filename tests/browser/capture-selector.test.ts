@@ -3,13 +3,13 @@ import { test } from "node:test";
 import { chromium } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import type { interactionSelector as SelectorFunction } from "../packages/capture/src/interaction-selector.ts";
+import type { interactionSelector as SelectorFunction } from "../../packages/capture/src/interaction-selector.ts";
 // Serialize the package's TypeScript output, without tsx's Node-only function-name helpers.
 const interactionSelector = new Function(
   ts.transpileModule(
     readFileSync(
       new URL(
-        "../packages/capture/src/interaction-selector.ts",
+        "../../packages/capture/src/interaction-selector.ts",
         import.meta.url,
       ),
       "utf8",

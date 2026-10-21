@@ -42,9 +42,7 @@ to UPGRADING.md and include verification steps.
 Publish locally with interactive npm authentication and 2FA:
 
 ```sh
-npm ci
-npx playwright install chromium
-npm run capture:publish
+npm ci && npm run capture:publish
 ```
 
 Run from a terminal using Node 22.14+ and an npm account with publishing access to `@replayio`.

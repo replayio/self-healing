@@ -30,12 +30,15 @@ Use Node 22.13 or newer and npm. No provider account or database is needed to vi
 
 ```sh
 npm ci
-npx playwright install chromium  # browser-backed capture selector tests
 npm run dev              # landing page only, http://localhost:5173
 npm run dev:netlify      # landing page + REST API, http://localhost:8888
 npm test                 # isolated PGlite Postgres tests; no external services
 npm run build            # strict TypeScript check + production frontend
 ```
+
+Browser-backed capture selector tests run separately in PR CI. To run them locally,
+use `npx playwright install chromium` followed by `npm run test:browser`. They are
+not part of `npm test`, production deployment, or package publishing.
 
 For local database development, copy `.env.example` to `.env`, set `DATABASE_URL`, and apply the bootstrap migration with `node --env-file=.env --import tsx scripts/migrate.ts`. Netlify Dev loads `.env` automatically.
 
