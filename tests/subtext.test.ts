@@ -12,7 +12,7 @@ const tools = { tools: [{ name: "example" }] };
 const reply = (result: unknown = tools) =>
   Response.json({ jsonrpc: "2.0", id: 1, result });
 
-test("Subtext credential goes only to the fixed provider, with redirects disabled", async () => {
+test("Subtext credential goes to the default provider, with redirects disabled", async () => {
   const authenticate = createSubtextAuthenticator({
     request: async (url, init) => {
       assert.equal(url, "https://api.fullstory.com/mcp/subtext");
@@ -121,4 +121,17 @@ test("transport and identity resolver failures are sanitized", async () => {
       authenticate(request()),
       (e: HttpError) => e.status === 503 && !e.message.includes(key),
     );
+});
+
+test("Subtext authentication sends staging keys only to the selected endpoint", async () => {
+  const endpoint = "https://api.staging.fullstory.com/mcp/subtext";
+  const authenticate = createSubtextAuthenticator({
+    request: async (url, init) => {
+      assert.equal(url, endpoint);
+      assert.equal(init?.redirect, "error");
+      return reply();
+    },
+    resolveIdentity: async () => ({ accountId: "provider-account" }),
+  });
+  await authenticate(request(), endpoint);
 });

@@ -43,6 +43,7 @@ const dependencies = {
     ...accountService(async () => [], vault),
     credentials: async () => ({
       qaToken: "SECRET_QA",
+      subtextApiUrl: "https://api.fullstory.com/mcp/subtext",
       subtextKey: "SECRET_SUBTEXT",
     }),
   }),

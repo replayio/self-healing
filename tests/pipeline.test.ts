@@ -417,7 +417,11 @@ test("HTTP pipeline requires the account bearer, validates inputs and scopes pro
       ...accountService(query, vault),
       credentials: async (id) => {
         assert.equal(id, account);
-        return { qaToken: "dedicated", subtextKey: "private" };
+        return {
+          qaToken: "dedicated",
+          subtextKey: "private",
+          subtextApiUrl: "https://api.fullstory.com/mcp/subtext",
+        };
       },
     }),
     connections: (token) => {

@@ -1,3 +1,4 @@
+import { SubtextApiUrl } from "./subtext-endpoint.ts";
 import { z } from "zod";
 
 export const Id = z.string().uuid();
@@ -948,9 +949,12 @@ export const operations: Operation[] = [
     implemented: true,
     summary: "Provision an account with a dedicated QA identity",
     description:
-      "Validate a Subtext key and return a Self Healing API key. Repeat with the same Subtext key to recover the same account and API key. All subsequent requests use the returned API key.",
+      "Validate a Subtext key and return a Self Healing API key. Optionally select a US, EU, or staging Subtext MCP endpoint for this account and its connected project. Defaults to US production. Repeat with the same Subtext key and endpoint to recover the same account and API key. All subsequent requests use the returned API key.",
     body: z
-      .object({ subtext_api_key: z.string().min(1).max(4096).regex(/^\S+$/) })
+      .object({
+        subtext_api_key: z.string().min(1).max(4096).regex(/^\S+$/),
+        subtext_api_url: SubtextApiUrl.optional(),
+      })
       .strict(),
     response: z.object({ account_id: Id, api_key: z.string() }),
   },

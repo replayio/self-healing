@@ -92,6 +92,7 @@ test("destination routes use the account's QA project and token, preserve other 
         authenticate: auth,
         credentials: async (id) => ({
           qaToken: `token-${id}`,
+          subtextApiUrl: "https://api.fullstory.com/mcp/subtext",
           subtextKey: "unused",
         }),
         provisionAccount: async () => {
