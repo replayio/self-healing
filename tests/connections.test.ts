@@ -950,12 +950,16 @@ test("callback failures return JSON with upstream status and bounded, redacted d
   }
 });
 
-test("staging session and client-session URLs are forwarded and retries deduplicated", async () => {
+test("Fullstory wildcard hosts are forwarded and retries deduplicated", async () => {
   const f = await fixture("https://api.staging.fullstory.com/mcp/subtext");
   try {
     await f.service.connect(f.account, "customer-key", settings);
-    for (const kind of ["session", "client-session"]) {
-      const url = `https://app.staging.fullstory.com/ui/org/${kind}/123:456`;
+    for (const [host, kind] of [
+      ["app.staging.fullstory.com", "session"],
+      ["app.future-region.fullstory.com", "client-session"],
+      ["replay.internal.preview.fullstory.com", "trace"],
+    ]) {
+      const url = `https://${host}/ui/org/${kind}/123:456`;
       const input = { session_url: url + "#at=1000" };
       const first = await f.service.action(f.account, "session", input);
       assert.equal(first.status, "stored");
@@ -971,9 +975,11 @@ test("staging session and client-session URLs are forwarded and retries deduplic
     }
     assert.equal(
       f.calls.filter((c) => c.path === "/api/project-session/register").length,
-      2,
+      3,
     );
     for (const url of [
+      "https://notfullstory.com/ui/org/session/1",
+      "https://fullstory.com/ui/org/session/1",
       "http://app.staging.fullstory.com/ui/org/session/1",
       "https://app.staging.fullstory.com.evil.example/ui/org/session/1",
       "https://user:password@app.staging.fullstory.com/ui/org/session/1",
@@ -986,7 +992,7 @@ test("staging session and client-session URLs are forwarded and retries deduplic
     }
     assert.equal(
       f.calls.filter((c) => c.path === "/api/project-session/register").length,
-      2,
+      3,
     );
   } finally {
     await f.db.close();

@@ -129,8 +129,10 @@ errors and cannot recover previously discarded validation details.
 
 Provisioning accepts optional `subtext_api_url`, stored on the account that owns the
 single connected QA project. Authentication, session callbacks, and dashboard
-reviews use that endpoint. Only the US, EU, and staging Fullstory MCP endpoints
-are accepted, preventing the public provisioning route from fetching arbitrary URLs.
+reviews use that endpoint. HTTPS endpoints on `*.fullstory.com` with the exact `/mcp/subtext` path
+are accepted. Credentials, custom ports, query strings, and fragments are rejected.
+Session ingestion likewise accepts HTTPS session URLs on `*.fullstory.com`, so new
+Fullstory environments do not need per-host allowlist updates in either service.
 There is no global override or automatic endpoint probing. The `na1.` key prefix
 does not establish whether a key is for production or staging.
 
