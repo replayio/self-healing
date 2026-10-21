@@ -1,16 +1,19 @@
+import { subtextEndpoint } from "./subtext-endpoint.ts";
 import { z } from "zod";
 import { credentialVault } from "./credentials.ts";
 import { HttpError } from "./errors.ts";
 
 // Protocol follows fullstorydev/subtext-cli internal/cli/auth.go and
 // internal/mcpclient/client.go: auth whoami calls tools/list with this bearer key.
-const endpoint = "https://api.fullstory.com/mcp/subtext";
 const toolsResult = z.object({
   tools: z.array(z.object({ name: z.string() })),
 });
 export type SubtextIdentity = { accountId: string };
 export type IdentityResolver = (key: string) => Promise<SubtextIdentity>;
-export type Authenticator = (request: Request) => Promise<SubtextIdentity>;
+export type Authenticator = (
+  request: Request,
+  endpoint?: string,
+) => Promise<SubtextIdentity>;
 
 export function createSubtextAuthenticator(
   options: {
@@ -18,7 +21,7 @@ export function createSubtextAuthenticator(
     resolveIdentity?: IdentityResolver;
   } = {},
 ): Authenticator {
-  return async (request) => {
+  return async (request, endpoint) => {
     const key = /^Bearer ([^\s]+)$/i.exec(
       request.headers.get("authorization") ?? "",
     )?.[1];
@@ -36,7 +39,7 @@ export function createSubtextAuthenticator(
       error?: unknown;
     };
     try {
-      response = await (options.request ?? fetch)(endpoint, {
+      response = await (options.request ?? fetch)(subtextEndpoint(endpoint), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${key}`,

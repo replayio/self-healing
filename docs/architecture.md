@@ -123,3 +123,22 @@ original response and emits `service_error_persistence_failed` with the same saf
 metadata to runtime logs. That fallback cannot guarantee database durability during
 a database outage. Apply the migration before deploying; this only captures future
 errors and cannot recover previously discarded validation details.
+
+
+## Project Subtext endpoints
+
+Provisioning accepts optional `subtext_api_url`, stored on the account that owns the
+single connected QA project. Authentication, session callbacks, and dashboard
+reviews use that endpoint. Only the US, EU, and staging Fullstory MCP endpoints
+are accepted, preventing the public provisioning route from fetching arbitrary URLs.
+There is no global override or automatic endpoint probing. The `na1.` key prefix
+does not establish whether a key is for production or staging.
+
+Migration `009_subtext_endpoint.sql` preserves US production for existing accounts.
+The production workflow runs `scripts/migrate.ts`, which discovers this numbered
+SQL file automatically, before publishing to Netlify. A migration failure stops
+deployment; no manual production migration is needed. Recovery requires the original key and endpoint;
+reusing a provisioned key with a different endpoint returns 409 and does not change
+stored routing. This does not add credential rotation or endpoint mutation to an
+existing integration. Credentials remain encrypted with the existing keyed
+fingerprint binding, and session contents are not stored here.

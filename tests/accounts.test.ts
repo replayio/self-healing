@@ -22,10 +22,12 @@ async function fixture() {
   const issued: { slug: string; value: string }[] = [];
   let loseResponse = false;
   let validations = 0;
+  const endpoints: (string | undefined)[] = [];
   const service = accountService(
     query,
     vault,
-    async (request) => {
+    async (request, endpoint) => {
+      endpoints.push(endpoint);
       validations++;
       if (!request.headers.get("authorization")?.startsWith("Bearer subtext-"))
         throw new HttpError(401, "unauthorized", "Invalid provider key");
@@ -91,6 +93,7 @@ async function fixture() {
     issued,
     call,
     work,
+    endpoints,
     validations: () => validations,
     lose: () => {
       loseResponse = true;
@@ -301,8 +304,46 @@ test("missing provisioning configuration does not make an account's first issuan
     assert.equal(row!.qa_issue_attempted, false);
     assert.ok((await f.service.provisionAccount("subtext-a")).api_key);
   } finally {
-    if (previous !== undefined)
-      process.env.LOOPQA_ADMIN_TOKEN = previous;
+    if (previous !== undefined) process.env.LOOPQA_ADMIN_TOKEN = previous;
+    await f.db.close();
+  }
+});
+
+test("project provisioning retains the selected endpoint and isolates production accounts", async () => {
+  const f = await fixture();
+  try {
+    const endpoint = "https://api.staging.fullstory.com/mcp/subtext";
+    const response = await f.call("accounts", undefined, {
+      subtext_api_key: "subtext-staging",
+      subtext_api_url: endpoint,
+    });
+    assert.equal(response.status, 200);
+    const staging = await response.json();
+    assert.equal(f.endpoints[0], endpoint);
+    assert.equal(
+      (await f.service.credentials(staging.account_id)).subtextApiUrl,
+      endpoint,
+    );
+    assert.deepEqual(
+      await f.service.provisionAccount("subtext-staging", endpoint),
+      staging,
+    );
+    const production = await f.service.provisionAccount("subtext-production");
+    assert.equal(
+      (await f.service.credentials(production.account_id)).subtextApiUrl,
+      "https://api.fullstory.com/mcp/subtext",
+    );
+    await assert.rejects(
+      f.service.provisionAccount("subtext-staging"),
+      (e: HttpError) => e.status === 409,
+    );
+    const invalid = await f.call("accounts", undefined, {
+      subtext_api_key: "subtext-invalid",
+      subtext_api_url: "https://127.0.0.1/mcp/subtext",
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal((await f.query("SELECT * FROM accounts", [])).length, 2);
+  } finally {
     await f.db.close();
   }
 });

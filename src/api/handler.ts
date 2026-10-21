@@ -152,10 +152,12 @@ export function createHandler(
       if (operation.id === "provisionAccount") {
         const input = operation.body!.parse(await readBody(request)) as {
           subtext_api_key: string;
+          subtext_api_url?: string;
         };
         return json(
           await (dependencies.accounts ?? getAccountService)().provisionAccount(
             input.subtext_api_key,
+            input.subtext_api_url,
           ),
         );
       }
@@ -305,7 +307,7 @@ export function createHandler(
         });
         const sessionData = (
           dependencies.dashboardSessions ?? dashboardSessions
-        )(qa, credentials.subtextKey);
+        )(qa, credentials.subtextKey, undefined, credentials.subtextApiUrl);
         const data = (dependencies.dashboardData ?? dashboardData)(
           qa,
           Date.now(),

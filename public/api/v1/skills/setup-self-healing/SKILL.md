@@ -35,7 +35,7 @@ If the project has no Self Healing account key, obtain a Subtext API key with ac
 
 ### Resolve the Fullstory organization
 
-Once the Subtext API key is available, the factory must resolve its organization ID itself before installing capture; do not require the user to supply an org ID. Make a server-side `GET https://api.fullstory.com/me` request with `Authorization: Basic <Subtext API key>` and read the nonempty `orgId` string from the JSON response. The key is used verbatim after `Basic`, without additional base64 encoding. For keys beginning with `eu1.`, use `https://api.eu1.fullstory.com/me`; `na1.` keys use the default host. For legacy keys without a region prefix, use the project's known Fullstory region, or the default host when no region is known. This is Fullstory's [API-key organization lookup](https://github.com/fullstorydev/subtext-wizard/blob/main/src/auth.ts), not a Self Healing route or an MCP `tools/list` call.
+Once the Subtext API key is available, the factory must resolve its organization ID itself before installing capture; do not require the user to supply an org ID. Make a server-side `GET https://api.fullstory.com/me` request with `Authorization: Basic <Subtext API key>` and read the nonempty `orgId` string from the JSON response. The key is used verbatim after `Basic`, without additional base64 encoding. For keys beginning with `eu1.`, use `https://api.eu1.fullstory.com/me`; `na1.` keys normally use the default host, but the prefix does not distinguish staging from production. For a project known to use Fullstory staging, use `https://api.staging.fullstory.com/me`, including for `na1.` keys. For legacy keys without a region prefix, use the project's known Fullstory region, or the default host when no region is known. This is Fullstory's [API-key organization lookup](https://github.com/fullstorydev/subtext-wizard/blob/main/src/auth.ts), not a Self Healing route or an MCP `tools/list` call.
 
 Use the returned `orgId` for capture's `orgId` option. If existing instrumentation has an organization ID, verify that it matches; resolve a mismatch before changing capture or provisioning a new account. If the lookup fails or returns no org ID, stop that setup step and report the status without credentials. Ask for a corrected key or region through the appropriate input when needed, rather than asking for an org ID or running the wizard. An existing working Self Healing integration with a configured capture org ID can reuse those settings without requesting the Subtext key again; if the org ID is missing, securely obtain the original Subtext key for this lookup without reprovisioning.
 
@@ -48,6 +48,14 @@ POST `/api/v1/accounts` (`provisionAccount`) with `Content-Type: application/jso
 ```json
 {"subtext_api_key":"<Subtext key>"}
 ```
+
+For a project using EU or staging, include `subtext_api_url` in that body with the matching full MCP endpoint: `https://api.eu1.fullstory.com/mcp/subtext` or `https://api.staging.fullstory.com/mcp/subtext`. For example, staging provisioning uses:
+
+```json
+{"subtext_api_key":"<Subtext key>","subtext_api_url":"https://api.staging.fullstory.com/mcp/subtext"}
+```
+
+Omission selects US production. Save the selected endpoint in the project's configuration and include it on provisioning retries. Self Healing retains it for this account's connected project, including unattended session reviews and dashboard reads. Do not substitute a production key when the required sessions belong to staging. A successful `/me` lookup identifies the organization; provisioning separately verifies Subtext MCP access.
 
 No bearer key is required for this provisioning request: Self Healing validates the supplied Subtext key. The response contains `account_id` and `api_key`. **Immediately persist the returned `api_key` as `SELF_HEALING_API_KEY` before continuing setup.** It is a required long-lived credential for two consumers:
 
@@ -62,7 +70,7 @@ Record `account_id`, `SELF_HEALING_URL`, and the secret's name/location in durab
 
 All subsequent **Self Healing** API calls use `Authorization: Bearer <SELF_HEALING_API_KEY>`, **not the Subtext key**. Each account has its own QA identity; Self Healing retains the encrypted provider credentials and mediates QA's session access. Once organization lookup and provisioning succeed, the application does not need to retain its Subtext key for these API calls.
 
-If the provisioning response or returned key was lost, first check the factory and site secret stores. If neither has it, repeat `POST /api/v1/accounts` with the **same valid Subtext key** to recover the same account and API key, then persist and verify it as above. If the original Subtext key is unavailable, request it through secure secret input. An `account_id` alone cannot authenticate or recover the key. A different Subtext key creates another account even within the same Fullstory organization; do not substitute a new key to recover an existing integration. Account key rotation is not implemented. If provisioning returns `account_busy`, retry with backoff. If it returns `provisioning_pending`, stop provisioning and report that the service operator must reconcile an uncertain QA token issuance. Do not work around it by changing keys.
+If the provisioning response or returned key was lost, first check the factory and site secret stores. If neither has it, repeat `POST /api/v1/accounts` with the **same valid Subtext key and selected `subtext_api_url`** to recover the same account and API key, then persist and verify it as above. If the original Subtext key is unavailable, request it through secure secret input. An `account_id` alone cannot authenticate or recover the key. A different Subtext key creates another account even within the same Fullstory organization; do not substitute a new key to recover an existing integration. Account key rotation is not implemented. If provisioning returns `account_busy`, retry with backoff. If it returns `provisioning_pending`, stop provisioning and report that the service operator must reconcile an uncertain QA token issuance. Do not work around it by changing keys.
 
 ## Connect the application
 

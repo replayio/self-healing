@@ -13,10 +13,14 @@ const session = {
   first_received_at: "2026-09-30T00:00:00Z",
   last_received_at: "2026-09-30T01:00:00Z",
 };
-function fixture(failure?: string, sightmap: Record<string, unknown> = {}) {
+function fixture(
+  failure?: string,
+  sightmap: Record<string, unknown> = {},
+  endpoint = "https://api.fullstory.com/mcp/subtext",
+) {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const request: typeof fetch = async (url, init) => {
-    assert.equal(url, "https://api.fullstory.com/mcp/subtext");
+    assert.equal(url, endpoint);
     assert.equal(
       new Headers(init!.headers).get("authorization"),
       "Bearer secret-key",
@@ -260,4 +264,20 @@ test("snapshot HTTP failures identify the operation without claiming the session
         "Subtext review-snapshot failed. Too many requests; retry shortly.",
   );
   assert.equal(f.calls.at(-1)!.name, "review-close");
+});
+
+test("dashboard reviews use the project staging endpoint for every MCP call", async () => {
+  const endpoint = "https://api.staging.fullstory.com/mcp/subtext";
+  const f = fixture(undefined, {}, endpoint);
+  const service = dashboardSessions(
+    async (path) => {
+      if (path.endsWith("/sightmap")) throw new QARequestError(404);
+      return { sessions: [session], page: 0, has_more: false };
+    },
+    "secret-key",
+    f.request,
+    endpoint,
+  );
+  await service.session(connection, session.session_id);
+  await service.snapshot(connection, session.session_id, 100);
 });
