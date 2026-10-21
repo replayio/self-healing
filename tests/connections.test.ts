@@ -288,7 +288,10 @@ test("previously sealed sessions accept new captures without installer intervent
     await f.db.close();
   }
 });
-async function checkCallbackEndpoint(endpoint?: string) {
+async function checkCallbackEndpoint(
+  endpoint?: string,
+  sessionUrl = "https://app.fullstory.com/ui/org/session/1",
+) {
   const f = await fixture(endpoint);
   try {
     await f.service.connect(f.account, "customer-key", settings);
@@ -483,7 +486,10 @@ async function checkCallbackEndpoint(endpoint?: string) {
 test("callback enforces session and MCP-client scope at the default endpoint", () =>
   checkCallbackEndpoint());
 test("callback uses the saved staging endpoint with the same session isolation", () =>
-  checkCallbackEndpoint("https://api.staging.fullstory.com/mcp/subtext"));
+  checkCallbackEndpoint(
+    "https://api.staging.fullstory.com/mcp/subtext",
+    "https://app.staging.fullstory.com/ui/org/session/123:456",
+  ));
 test("connection responses hide internal credentials and QA transport uses existing API paths", async () => {
   const f = await fixture();
   try {
@@ -939,6 +945,49 @@ test("callback failures return JSON with upstream status and bounded, redacted d
     );
     assert.equal(forbidden.status, 403);
     assert.equal((await forbidden.json()).error.code, "session_scope");
+  } finally {
+    await f.db.close();
+  }
+});
+
+test("staging session and client-session URLs are forwarded and retries deduplicated", async () => {
+  const f = await fixture("https://api.staging.fullstory.com/mcp/subtext");
+  try {
+    await f.service.connect(f.account, "customer-key", settings);
+    for (const kind of ["session", "client-session"]) {
+      const url = `https://app.staging.fullstory.com/ui/org/${kind}/123:456`;
+      const input = { session_url: url + "#at=1000" };
+      const first = await f.service.action(f.account, "session", input);
+      assert.equal(first.status, "stored");
+      assert.deepEqual(
+        await f.service.action(f.account, "session", input),
+        first,
+      );
+      const upload = f.calls
+        .filter((c) => c.path === "/api/project-session/register")
+        .at(-1)!.body as { session_url: string; auxiliary_data: unknown[] };
+      assert.equal(upload.session_url, url);
+      assert.deepEqual(upload.auxiliary_data, []);
+    }
+    assert.equal(
+      f.calls.filter((c) => c.path === "/api/project-session/register").length,
+      2,
+    );
+    for (const url of [
+      "http://app.staging.fullstory.com/ui/org/session/1",
+      "https://app.staging.fullstory.com.evil.example/ui/org/session/1",
+      "https://user:password@app.staging.fullstory.com/ui/org/session/1",
+      "https://app.staging.fullstory.com/ui/org/settings",
+    ]) {
+      await assert.rejects(
+        f.service.action(f.account, "session", { session_url: url }),
+        { status: 400, code: "invalid_session" },
+      );
+    }
+    assert.equal(
+      f.calls.filter((c) => c.path === "/api/project-session/register").length,
+      2,
+    );
   } finally {
     await f.db.close();
   }

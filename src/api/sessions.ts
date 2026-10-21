@@ -12,7 +12,11 @@ export function normalizeSessionUrl(raw: string) {
   const url = new URL(raw);
   if (
     url.protocol !== "https:" ||
-    !["app.fullstory.com", "app.eu1.fullstory.com"].includes(url.hostname) ||
+    ![
+      "app.fullstory.com",
+      "app.eu1.fullstory.com",
+      "app.staging.fullstory.com",
+    ].includes(url.hostname) ||
     url.username ||
     url.password ||
     !/(?:client-session|session|trace)\//.test(url.pathname)
