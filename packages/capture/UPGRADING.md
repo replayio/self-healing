@@ -32,6 +32,18 @@ For the current complete setup contract, see
 https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md.
 Use it to reconcile the existing integration; do not treat an upgrade as a new setup.
 
+## 0.1.7 — Unique interaction selectors
+
+Update the package and application lockfile; no forwarding API changes are needed.
+New events validate selectors against the captured page, retain Playwright text
+selectors, scope duplicate controls by ancestors, and use structural paths when
+needed. Unresolvable targets retain a null selector. Existing recordings are unchanged.
+Verify a new session with repeated labels and unlabeled buttons: each non-null
+selector must resolve to exactly the interacted control in the original page state.
+Structural paths are specific to that state and may stop matching after DOM changes.
+Open shadow roots are included; closed roots cannot be addressed. Frame contents
+are separate documents and this change does not add iframe event listeners.
+
 ## 0.1.6 — Retain oversized network exchanges
 
 Oversized exchanges are redacted to fit instead of dropped. Text bodies keep a

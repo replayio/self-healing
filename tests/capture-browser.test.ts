@@ -152,9 +152,11 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       require: (name: string) =>
         name === "@fullstory/browser"
           ? sdk
-          : name.includes("redaction")
-            ? redaction
-            : transport,
+          : name.includes("interaction-selector")
+            ? { interactionSelector: () => null }
+            : name.includes("redaction")
+              ? redaction
+              : transport,
       window: fakeWindow,
       URL,
       Request,

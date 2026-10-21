@@ -43,6 +43,7 @@ Publish locally with interactive npm authentication and 2FA:
 
 ```sh
 npm ci
+npx playwright install chromium
 npm run capture:publish
 ```
 
