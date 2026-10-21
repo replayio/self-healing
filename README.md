@@ -30,6 +30,7 @@ Use Node 22.13 or newer and npm. No provider account or database is needed to vi
 
 ```sh
 npm ci
+npx playwright install chromium  # browser-backed capture selector tests
 npm run dev              # landing page only, http://localhost:5173
 npm run dev:netlify      # landing page + REST API, http://localhost:8888
 npm test                 # isolated PGlite Postgres tests; no external services

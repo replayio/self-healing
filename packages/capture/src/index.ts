@@ -1,3 +1,4 @@
+import { interactionSelector } from "./interaction-selector.js";
 import { redactExchange, type Redaction } from "./redaction.js";
 import { FullStory, init } from "@fullstory/browser";
 import {
@@ -283,7 +284,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.6" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.7" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
@@ -408,27 +409,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
     }, 250);
   }
 
-  function selectorFor(element: Element): string | null {
-    const tag = element.tagName.toLowerCase();
-    const testId = element.getAttribute("data-testid");
-    const candidate = (selector: string) =>
-      selector.length <= 2_000 ? selector : null;
-    if (testId) return candidate(`[data-testid=${JSON.stringify(testId)}]`);
-    if (element.id) return candidate(`#${CSS.escape(element.id)}`);
-    const ariaLabel = element.getAttribute("aria-label");
-    if (ariaLabel)
-      return candidate(`${tag}[aria-label=${JSON.stringify(ariaLabel)}]`);
-    const name = element.getAttribute("name");
-    if (name) return candidate(`${tag}[name=${JSON.stringify(name)}]`);
-    const label = (element.textContent ?? "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 500);
-    return label
-      ? candidate(`${tag}:has-text(${JSON.stringify(label)})`)
-      : null;
-  }
-
   function recordInteraction(event: Event): void {
     if (stopped || !event.isTrusted) return;
     const session = captureSession();
@@ -439,7 +419,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
       .filter((item): item is Element => item instanceof Element);
     const target =
       path.find((element) => element.matches(ACTIONABLE_SELECTOR)) ?? path[0];
-    const selector = target ? selectorFor(target) : null;
+    const selector = target ? interactionSelector(target) : null;
     const label = target
       ? (
           target.getAttribute("aria-label") ||
