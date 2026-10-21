@@ -39,11 +39,13 @@ independent ingestion schemas and compatibility tests compatible. Initial instal
 that changes application integration requirements must add a versioned migration
 to UPGRADING.md and include verification steps.
 
+Browser selector compatibility tests run in the separate PR CI `browser-tests` job.
+Publishing does not install or launch Chromium.
+
 Publish locally with interactive npm authentication and 2FA:
 
 ```sh
 npm ci
-npx playwright install chromium
 npm run capture:publish
 ```
 

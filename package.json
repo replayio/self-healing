@@ -15,7 +15,8 @@
     "db:migrate": "node --import tsx scripts/migrate.ts",
     "deploy:ci": "node --import tsx scripts/deploy-ci.ts",
     "build:capture": "npm run build --workspace @replayio/self-healing-capture",
-    "capture:publish": "node --import tsx scripts/publish-capture.ts"
+    "capture:publish": "node --import tsx scripts/publish-capture.ts",
+    "test:browser": "node --import tsx --test tests/browser/*.test.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.0",
