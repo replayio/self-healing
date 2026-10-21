@@ -49,7 +49,7 @@ POST `/api/v1/accounts` (`provisionAccount`) with `Content-Type: application/jso
 {"subtext_api_key":"<Subtext key>"}
 ```
 
-For a project using EU or staging, include `subtext_api_url` in that body with the matching full MCP endpoint: `https://api.eu1.fullstory.com/mcp/subtext` or `https://api.staging.fullstory.com/mcp/subtext`. For example, staging provisioning uses:
+Subtext endpoints accept HTTPS URLs on `*.fullstory.com` with the exact `/mcp/subtext` path; new Fullstory regions and environments do not require an allowlist update. For a project using EU or staging, include `subtext_api_url` in that body with the matching full MCP endpoint: `https://api.eu1.fullstory.com/mcp/subtext` or `https://api.staging.fullstory.com/mcp/subtext`. For example, staging provisioning uses:
 
 ```json
 {"subtext_api_key":"<Subtext key>","subtext_api_url":"https://api.staging.fullstory.com/mcp/subtext"}
