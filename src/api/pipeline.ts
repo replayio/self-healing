@@ -12,7 +12,7 @@ import {
 import { dashboardData } from "./dashboard-data.ts";
 import type { Connection } from "./connections.ts";
 import { HttpError, validationDiagnostics } from "./errors.ts";
-import { qaClient, QARequestError } from "./qa.ts";
+import { type QAClient, QARequestError } from "./qa.ts";
 
 const Row = z.object({ id: QAId, project_id: QAId }).passthrough();
 const SourceRun = Row.extend({
@@ -47,7 +47,7 @@ function recordings(row: {
   ].map((id) => `https://app.replay.io/recording/${encodeURIComponent(id)}`);
 }
 export function pipelineData(
-  qa: ReturnType<typeof qaClient>,
+  qa: QAClient,
   qaOrigin = process.env.REPLAY_QA_URL ?? "https://qa.replay.io",
   fixPrs = getFixPrStore,
 ) {
