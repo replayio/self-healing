@@ -13,11 +13,14 @@ a client-selected account ID. QA derives its directory key from the authenticate
 identity (`service|self-healing-<uuid>`). Dashboard cookies cannot manage configuration.
 
 PUT accepts `{ expected_revision, configuration }`. Configuration contains `mode: "external"`,
-`retention: "zero"`, a `database` with `adapter: "neon"` and `connection_string`, an `artifacts`
-service, and `recordings.upload`, `.api`, `.mcp`, and `.dispatch` services. Each service has an
-`endpoint` and `credential`. Endpoints use HTTPS (WSS for dispatch), without URL credentials,
-query strings or fragments. Artifacts cover non-recording blobs, including task logs and retained
-request-recording data; their durable external adapter remains follow-up work.
+`retention: "zero"`, and a `database` with `adapter: "neon"` and `connection_string`.
+`artifacts` uses standard S3 configuration: `endpoint`, `region`, `bucket`, `forcePathStyle`, optional
+`prefix`, and `credentials: { accessKeyId, secretAccessKey, sessionToken? }`. QA's S3 adapter handles
+artifacts and task logs without a custom HTTP service. The recording services (`upload`, `api`, `mcp`,
+`dispatch`) still take `endpoint` and `credential`. Endpoints use HTTPS (WSS for dispatch), without
+URL credentials, query strings or fragments. This schema matches QA's encrypted configuration;
+Self Healing only forwards it and never stores these secrets locally. Recording storage provisioning
+and external execution remain follow-ups.
 
 QA encrypts the configuration with AES-GCM and binds it to the account and a keyed fingerprint.
 It performs atomic revision checks: initial revision is 0, changed settings increment it, identical

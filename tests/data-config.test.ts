@@ -13,7 +13,7 @@ const service = { endpoint: "https://storage.example/service", credential: "PRIV
 const configuration = ExternalDataConfig.parse({
   mode: "external", retention: "zero",
   database: { adapter: "neon", connection_string: "postgresql://user:PRIVATE_PASSWORD@database.example/account" },
-  artifacts: service,
+  artifacts: { endpoint: 'https://s3.example', region: 'auto', bucket: 'qa-artifacts', forcePathStyle: true, credentials: { accessKeyId: 'PRIVATE_ID', secretAccessKey: 'PRIVATE_SECRET' } },
   recordings: { upload: service, api: service, mcp: service, dispatch: { ...service, endpoint: "wss://recordings.example/dispatch" } },
 });
 const input = { expected_revision: 0, configuration };

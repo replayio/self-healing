@@ -40,6 +40,18 @@ const ExternalService = object({
   endpoint: ServiceEndpoint,
   credential: ServiceSecret,
 }).strict();
+export const S3StorageConfig = z.object({
+  endpoint: ServiceEndpoint,
+  region: z.string().min(1).max(128),
+  bucket: z.string().min(3).max(63).regex(/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/),
+  forcePathStyle: z.boolean(),
+  prefix: z.string().max(512).refine(value => !value.startsWith('/') && !value.endsWith('/') && !value.split('/').some(part => part === '.' || part === '..')).optional(),
+  credentials: z.object({
+    accessKeyId: ServiceSecret,
+    secretAccessKey: ServiceSecret,
+    sessionToken: ServiceSecret.optional(),
+  }).strict(),
+}).strict();
 export const ExternalDataConfig = object({
   mode: z.literal("external"),
   retention: z.literal("zero"),
@@ -53,7 +65,7 @@ export const ExternalDataConfig = object({
       }
     }, "Use a PostgreSQL connection string"),
   }).strict(),
-  artifacts: ExternalService,
+  artifacts: S3StorageConfig,
   recordings: object({
     upload: ExternalService,
     api: ExternalService,
