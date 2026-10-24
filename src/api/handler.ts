@@ -32,7 +32,6 @@ import {
 import { getOpenApiSpec } from "./openapi.ts";
 import { getStore, type Store } from "./store.ts";
 
-const MAX_BODY_BYTES = 256 * 1024;
 async function readBody(request: Request): Promise<unknown> {
   if (
     request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
@@ -44,31 +43,7 @@ async function readBody(request: Request): Promise<unknown> {
       "Use Content-Type: application/json.",
     );
   }
-  const reader = request.body?.getReader();
-  let text = "",
-    bytes = 0;
-  const decoder = new TextDecoder();
-  if (reader) {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        bytes += value.length;
-        if (bytes > MAX_BODY_BYTES) {
-          await reader.cancel();
-          throw new HttpError(
-            413,
-            "body_too_large",
-            "Request body exceeds 256 KiB.",
-          );
-        }
-        text += decoder.decode(value, { stream: true });
-      }
-      text += decoder.decode();
-    } finally {
-      reader.releaseLock();
-    }
-  }
+  const text = await request.text();
   try {
     return JSON.parse(text);
   } catch {
@@ -169,7 +144,7 @@ export function createHandler(
             skills_url: new URL("/api/v1/skills", url).href,
             setup_skill_url: new URL(agentSkills[0].path, url).href,
             instructions:
-              "Read the setup skill and OpenAPI specification, then follow the skill to set up this project. Skills are public and do not require credentials.",
+              "Read the setup skill and OpenAPI specification to set up this project. To update an existing installation, follow update-self-healing from the skill catalog. Skills are public and do not require credentials.",
             authentication:
               "Provision with a Subtext key using POST /api/v1/accounts. Save the returned Self Healing API key and use it as the bearer credential for subsequent calls. Never place either key in browser code.",
           }),
@@ -186,10 +161,12 @@ export function createHandler(
       if (operation.id === "provisionAccount") {
         const input = operation.body!.parse(await readBody(request)) as {
           subtext_api_key: string;
+          subtext_api_url?: string;
         };
         return json(
           await (dependencies.accounts ?? getAccountService)().provisionAccount(
             input.subtext_api_key,
+            input.subtext_api_url,
           ),
         );
       }
@@ -336,7 +313,7 @@ export function createHandler(
         const qa = services.qa;
         const sessionData = (
           dependencies.dashboardSessions ?? dashboardSessions
-        )(qa, services.subtextKey);
+        )(qa, services.subtextKey, undefined, services.subtextApiUrl);
         const data = (dependencies.dashboardData ?? dashboardData)(
           qa,
           Date.now(),

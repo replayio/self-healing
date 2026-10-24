@@ -22,7 +22,7 @@ Stay quiet when there is nothing actionable. Surface newly ready PRs, evidence-b
 
 Treat the report and proposed cause as claims to investigate. Compare the report with the source, intended product behavior, and recorded evidence. Inspect its recording with available Replay tools; reproduce or add a focused test where useful and permitted by the repository. Confirm both that there is a real defect and that changing this project is an appropriate fix.
 
-Use `invalid` when evidence establishes a false positive or expected behavior. Use `wontfix` for a real issue intentionally left unfixed or a duplicate already covered by other work. Both require a concrete reason and supporting evidence. For a duplicate, name the canonical bug and covering PR and explain why they cover this reproduction. If the product decision is unclear, ask the user; do not invent a reason to dismiss it. Missing access, an unavailable recording, a QA failure, or failure to reproduce alone is not evidence for dismissal.
+Use `invalid` when evidence establishes a false positive or expected behavior. Use `wontfix` for a real issue intentionally left unfixed or a duplicate already covered by other work. Both require a concrete reason and supporting evidence. Never reopen a `wontfix` bug without explicit approval from a human to reopen that specific bug. For a duplicate, name the canonical bug and covering PR and explain why they cover this reproduction. If the product decision is unclear, ask the user; do not invent a reason to dismiss it. Missing access, an unavailable recording, a QA failure, or failure to reproduce alone is not evidence for dismissal.
 
 Update the disposition through `PATCH /api/v1/connection/bugs/<bug_id>`:
 
@@ -106,5 +106,5 @@ Confirm the response has `status: "fixed"` and the saved reason in `notes`. Asso
 
 - Session capture forwarding remains installed by the setup skill. Continue forwarding without sending a manual completion request.
 - `GET /api/v1/connection/reports?day=YYYY-MM-DD` reads a daily report; omit `day` for the latest and navigation metadata. Reports are not prerequisites for triage or fixing a reported bug.
-- `POST /api/v1/dashboard-sessions` returns a dashboard URL reusable for seven days. Each opening establishes an independent seven-day browser session. Open it for the user in the most appropriate available surface, or provide an **Open dashboard** link.
+- `POST /api/v1/dashboard-sessions` returns a dashboard URL reusable for seven days. Each opening establishes an independent seven-day browser session. Provide an **Open dashboard** option; open it in the most appropriate available surface when the user asks. Use only this Self Healing dashboard for user-facing status, report, bug, and session links. Do not show `qa.replay.io`, `app.fullstory.com`, or provider recording URLs from API responses.
 - Read error status and code. Authentication/configuration failures need resolution; retry transient reads with backoff. Do not treat empty data or failed calls as successful work. Never call QA with the customer's Subtext or Self Healing key: the service supplies its dedicated QA credential internally.

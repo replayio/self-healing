@@ -6,6 +6,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
 import { operations } from "../src/api/contracts.ts";
+import * as redaction from "../packages/capture/src/redaction.ts";
 import * as transport from "../packages/capture/src/transport.ts";
 const NetworkAuxiliaryPayloadSchema = z.object({
   exchanges: z.array(
@@ -33,12 +34,13 @@ const UploadSchema = z.object({
   ),
 });
 
-{
-  test("package captures startup, rollover, in-flight responses, inputs and retries", async () => {
+for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
+  test(`package captures startup, rollover, in-flight responses, inputs and retries (limit ${maxNetworkCaptureBytes ?? "default"})`, async () => {
     const uploads: string[] = [];
     let failNext = false;
     let sessionUrl = "https://app.fullstory.com/session/test";
     let rejectedBatchStatus = 0;
+    let monotonicNow = 403;
     let responseBody: BodyInit = '{"user":null}';
     let terminalFailure = false;
     let releaseSlow: (() => void) | undefined;
@@ -89,13 +91,28 @@ const UploadSchema = z.object({
           }
           return new Response("", { status: 202 });
         }
+        monotonicNow += 37;
         if (url.endsWith("/slow"))
           await new Promise<void>((resolve) => {
             releaseSlow = resolve;
           });
-        return new Response(responseBody, {
+        const response = new Response(responseBody, {
           headers: { "Content-Type": "application/json" },
         });
+        if (url.endsWith("/api/auth-me")) {
+          const clone = response.clone.bind(response);
+          response.clone = () => {
+            const copy = clone();
+            const read = copy.arrayBuffer.bind(copy);
+            copy.arrayBuffer = async () => {
+              const bytes = await read();
+              monotonicNow += 83;
+              return bytes;
+            };
+            return copy;
+          };
+        }
+        return response;
       },
       addEventListener(name: string, callback: (event: unknown) => void) {
         listeners.set(name, callback);
@@ -112,6 +129,7 @@ const UploadSchema = z.object({
     const exports: {
       initCapture?: (options: {
         orgId: string;
+        maxNetworkCaptureBytes?: number;
         onError?: (error: Error) => void;
       }) => {
         identify: (user: { id: string; name: string; email: string }) => void;
@@ -132,7 +150,13 @@ const UploadSchema = z.object({
     runInNewContext(output, {
       exports,
       require: (name: string) =>
-        name === "@fullstory/browser" ? sdk : transport,
+        name === "@fullstory/browser"
+          ? sdk
+          : name.includes("interaction-selector")
+            ? { interactionSelector: () => null }
+            : name.includes("redaction")
+              ? redaction
+              : transport,
       window: fakeWindow,
       URL,
       Request,
@@ -149,7 +173,7 @@ const UploadSchema = z.object({
       InputEvent: FakeInputEvent,
       ClipboardEvent: FakeClipboardEvent,
       crypto: { randomUUID },
-      performance: { now: () => 403, timeOrigin: 1000 },
+      performance: { now: () => monotonicNow, timeOrigin: 1000 },
       setTimeout(callback: () => void, delay: number) {
         if (delay !== 250) {
           queueMicrotask(callback);
@@ -162,9 +186,38 @@ const UploadSchema = z.object({
         timers.delete(id);
       },
     });
-    const capture = exports.initCapture!({ orgId: "test", onError: () => {} });
+    for (const invalid of [
+      0,
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      assert.throws(
+        () =>
+          exports.initCapture!({
+            orgId: "test",
+            maxNetworkCaptureBytes: invalid,
+          }),
+        /safe integer of at least 1024 bytes/,
+      );
+    }
+    const capture = exports.initCapture!({
+      orgId: "test",
+      maxNetworkCaptureBytes,
+      onError: () => {},
+    });
+    assert.throws(
+      () =>
+        exports.initCapture!({ orgId: "test", maxNetworkCaptureBytes: 1234 }),
+      /different options/,
+    );
     assert.equal(
-      exports.initCapture!({ orgId: "test" }),
+      exports.initCapture!({
+        orgId: "test",
+        maxNetworkCaptureBytes: maxNetworkCaptureBytes ?? 1_000_000,
+      }),
       capture,
       "initialization is idempotent",
     );
@@ -209,6 +262,14 @@ const UploadSchema = z.object({
         await new Promise((resolve) => setImmediate(resolve));
       }
     }
+    const measured = startupEntries.find((e) =>
+      e.url.endsWith("/startup/slow"),
+    );
+    const timing = z
+      .object({ response_ms: z.number(), total_ms: z.number() })
+      .parse(measured?.timing);
+    assert.ok(timing.response_ms >= 37);
+    assert.ok(timing.total_ms >= timing.response_ms);
     await fakeWindow.fetch("https://example.test/api/auth-me");
     failNext = true;
     await flush();
@@ -238,7 +299,11 @@ const UploadSchema = z.object({
       entries[1]?.[0]?.id,
       "identical requests are distinct events",
     );
-    assert.equal(entries[0]?.[0]?.captured_at, 1403);
+    assert.equal(entries[0]?.[0]?.captured_at, 1440);
+    assert.deepEqual(entries[0]?.[0]?.timing, {
+      response_ms: 37,
+      total_ms: 120,
+    });
     const target = new FakeElement();
     const exact = "https://testflair.ai/?x=1&y=2\n  café 🦊 ";
     for (const type of ["keydown", "paste", "input", "keyup", "input"]) {
@@ -433,36 +498,125 @@ const UploadSchema = z.object({
       );
     }
 
+    const beforeOversized = uploads.length;
+    responseBody = "x".repeat(maxNetworkCaptureBytes ?? 1_000_000);
+    await fakeWindow.fetch("https://example.test/oversized-exchange");
+    await capture.flush();
+    responseBody = "small";
+    await fakeWindow.fetch("https://example.test/after-oversized");
+    await capture.flush();
+    const afterOversized = uploads
+      .slice(beforeOversized)
+      .flatMap((b) => JSON.parse(b).auxiliary_data);
+    const networkAfter = afterOversized
+      .filter((a) => a.namespace === "network")
+      .flatMap((a) => a.payload.exchanges);
+    const oversized = networkAfter.find((e) =>
+      e.url.endsWith("/oversized-exchange"),
+    );
+    assert.equal(oversized.redacted.response_body, true);
+    assert.ok(oversized.response_body.endsWith("[qa_redacted]"));
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(oversized)) <=
+        (maxNetworkCaptureBytes ?? 1_000_000),
+    );
+    assert.ok(networkAfter.some((e) => e.url.endsWith("/after-oversized")));
+
+    const beforeLongCapture = uploads.length;
     responseBody = "x".repeat(200_000);
     for (let i = 0; i < 42; i++) {
       await fakeWindow.fetch(`https://example.test/budget/${i}`);
-      await flush();
+      await capture.flush();
     }
-    const capped = uploads
-      .map((b) => UploadSchema.parse(JSON.parse(b)))
-      .filter((b) => b.session_url === sessionUrl)
-      .flatMap((b) => b.auxiliary_data)
+    // Small requests must also continue beyond the former lifetime count limit.
+    responseBody = "small";
+    for (let i = 0; i < 5_001; i++) {
+      await fakeWindow.fetch(`https://example.test/long-session/${i}`);
+      if (i % 100 === 0) await capture.flush();
+    }
+    await capture.flush();
+    const longArtifacts = uploads
+      .slice(beforeLongCapture)
+      .flatMap((b) => UploadSchema.parse(JSON.parse(b)).auxiliary_data);
+    const longExchanges = longArtifacts
+      .filter((a) => a.namespace === "network")
+      .flatMap((a) => NetworkAuxiliaryPayloadSchema.parse(a.payload).exchanges);
+    assert.equal(
+      longExchanges.filter((e) => e.url.includes("/budget/")).length,
+      42,
+    );
+    assert.ok(
+      longExchanges
+        .filter((e) => e.url.includes("/budget/"))
+        .every((e) => e.response_body === "x".repeat(200_000)),
+    );
+    assert.equal(
+      longExchanges.filter((e) => e.url.includes("/long-session/")).length,
+      5_001,
+    );
+    assert.equal(
+      new Set(longExchanges.map((e) => e.id)).size,
+      longExchanges.length,
+      "completed batches must not be uploaded again",
+    );
+    const lastContext = longArtifacts
       .filter((a) => a.key === "capture-context")
       .at(-1);
-    assert.ok(
-      ContextSchema.parse(capped?.payload).pages[0]!.dropped_network_count > 0,
-    );
+    if (lastContext) {
+      const previousContext = afterOversized
+        .filter((a) => a.key === "capture-context")
+        .at(-1);
+      assert.equal(
+        ContextSchema.parse(lastContext.payload).pages[0]!
+          .dropped_network_count,
+        previousContext
+          ? ContextSchema.parse(previousContext.payload).pages[0]!
+              .dropped_network_count
+          : 0,
+        "long sessions must not increase the dropped exchange count",
+      );
+    }
+    const beforeLongInteractions = uploads.length;
     for (let i = 0; i < 5_001; i++)
       listeners.get("click")!({
         type: "click",
         isTrusted: true,
         composedPath: () => [target],
       });
-    await flush();
-    const interactionCap = uploads
-      .map((b) => UploadSchema.parse(JSON.parse(b)))
-      .filter((b) => b.session_url === sessionUrl)
-      .flatMap((b) => b.auxiliary_data)
+    await capture.flush();
+    target.value = "input after 5000 interactions";
+    listeners.get("input")!({
+      type: "input",
+      isTrusted: true,
+      composedPath: () => [target],
+    });
+    await capture.flush();
+    const interactionArtifacts = uploads
+      .slice(beforeLongInteractions)
+      .flatMap((b) => UploadSchema.parse(JSON.parse(b)).auxiliary_data);
+    const longInteractions = interactionArtifacts
+      .filter((a) => a.namespace === "interaction")
+      .flatMap(
+        (a) => InteractionAuxiliaryPayloadSchema.parse(a.payload).interactions,
+      );
+    assert.equal(
+      longInteractions.filter((e) => e.kind === "click").length,
+      5_001,
+    );
+    assert.equal(
+      longInteractions.length,
+      5_002,
+      "flushed interactions must not be uploaded again",
+    );
+    assert.equal(longInteractions.at(-1)?.value, target.value);
+    const interactionContext = uploads
+      .flatMap((b) => UploadSchema.parse(JSON.parse(b)).auxiliary_data)
       .filter((a) => a.key === "capture-context")
       .at(-1);
-    assert.ok(
-      ContextSchema.parse(interactionCap?.payload).pages[0]!
-        .dropped_interaction_count > 0,
+    assert.equal(
+      ContextSchema.parse(interactionContext?.payload).pages[0]!
+        .dropped_interaction_count,
+      0,
     );
     // A terminal error on this session must not stop any producer on its successor.
     terminalFailure = true;
@@ -531,5 +685,14 @@ const UploadSchema = z.object({
       uploadCount,
       "stop must not register later SDK sessions",
     );
+    for (const body of uploads)
+      assert.ok(
+        Buffer.byteLength(body) <=
+          transport.uploadBatchBytes(
+            JSON.parse(body).session_url,
+            maxNetworkCaptureBytes,
+          ),
+        "all upload paths honor the derived batch budget",
+      );
   });
 }

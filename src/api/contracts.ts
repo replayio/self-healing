@@ -1,3 +1,4 @@
+import { SubtextApiUrl } from "./subtext-endpoint.ts";
 import { z } from "zod";
 
 export const Id = z.string().uuid();
@@ -517,7 +518,7 @@ export const agentSkills = [
     id: "setup-self-healing",
     name: "Set up Self Healing",
     description:
-      "Provision an account, connect this project, install session capture, choose daily report destinations, and verify delivery of real session captures to Self Healing.",
+      "Provision the account key, configure deployment secrets and session capture, verify delivery, and summarize report settings, bug handling, and the Self Healing dashboard.",
     path: "/api/v1/skills/setup-self-healing/SKILL.md",
   },
   {
@@ -526,6 +527,13 @@ export const agentSkills = [
     description:
       "Monitor bugs every 15 minutes, triage reports, record WONTFIX reasons, create fix PRs, and verify previews with QA through Self Healing.",
     path: "/api/v1/skills/operate-self-healing/SKILL.md",
+  },
+  {
+    id: "update-self-healing",
+    name: "Update Self Healing",
+    description:
+      "Update an existing capture package and application integration using the target release's migrations, then verify real session delivery.",
+    path: "/api/v1/skills/update-self-healing/SKILL.md",
   },
 ] as const;
 const SkillCatalog = z.object({
@@ -1049,9 +1057,12 @@ export const operations: Operation[] = [
     implemented: true,
     summary: "Provision an account with a dedicated QA identity",
     description:
-      "Validate a Subtext key and return a Self Healing API key. Repeat with the same Subtext key to recover the same account and API key. All subsequent requests use the returned API key.",
+      "Validate a Subtext key and return a Self Healing API key. Optionally select an HTTPS Subtext MCP endpoint on *.fullstory.com with path /mcp/subtext for this account and its connected project. Defaults to US production. Repeat with the same Subtext key and endpoint to recover the same account and API key. All subsequent requests use the returned API key.",
     body: z
-      .object({ subtext_api_key: z.string().min(1).max(4096).regex(/^\S+$/) })
+      .object({
+        subtext_api_key: z.string().min(1).max(4096).regex(/^\S+$/),
+        subtext_api_url: SubtextApiUrl.optional(),
+      })
       .strict(),
     response: z.object({ account_id: Id, api_key: z.string() }),
   },
@@ -1412,5 +1423,41 @@ export const GatewayCall = z
       "review-close",
     ]),
     arguments: z.record(z.unknown()).optional(),
+  })
+  .strict();
+
+// review-open may carry semantic context, but alternate session selectors are
+// deliberately excluded: the gateway authorizes only its registered URL.
+export const GatewayReviewOpenArguments = z
+  .object({
+    url: z.string().optional(),
+    session_url: z.string().optional(),
+    sessionUrl: z.string().optional(),
+    sightmap: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            selectors: z.array(z.string().min(1)).min(1),
+            source: z.string().optional(),
+            memory: z.array(z.string()).optional(),
+            tags: z.array(z.string()).optional(),
+            parentChain: z.array(z.string()).optional(),
+            properties: z
+              .array(
+                z
+                  .object({
+                    name: z.string().min(1),
+                    extract: z.string().min(1),
+                    description: z.string().min(1).optional(),
+                  })
+                  .strict(),
+              )
+              .optional(),
+          })
+          .strict(),
+      )
+      .optional(),
+    memory: z.array(z.string()).optional(),
   })
   .strict();

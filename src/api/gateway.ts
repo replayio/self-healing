@@ -1,6 +1,11 @@
+import { subtextEndpoint } from "./subtext-endpoint.ts";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { GatewayRpc, GatewayCall } from "./contracts.ts";
+import {
+  GatewayRpc,
+  GatewayCall,
+  GatewayReviewOpenArguments,
+} from "./contracts.ts";
 import { HttpError } from "./errors.ts";
 import type { Query } from "./store.ts";
 import type { credentialVault } from "./credentials.ts";
@@ -65,6 +70,7 @@ export async function gatewayRequest(
   key: string,
   body: unknown,
   scope: {
+    subtextApiUrl?: string;
     sessionId: string;
     sessionUrl: string;
     query: Query;
@@ -102,14 +108,17 @@ export async function gatewayRequest(
     tool = call.name;
     const args = call.arguments ?? {};
     if (tool === "review-open") {
-      const urls = Object.entries(args);
+      const parsed = GatewayReviewOpenArguments.safeParse(args);
+      const urls = [args.url, args.session_url, args.sessionUrl].filter(
+        (value) => value !== undefined,
+      );
       if (
+        !parsed.success ||
         !urls.length ||
         urls.some(
-          ([k, v]) =>
-            !["url", "session_url", "sessionUrl"].includes(k) ||
-            typeof v !== "string" ||
-            normalizeSessionUrl(v) !== scope.sessionUrl,
+          (value) =>
+            typeof value !== "string" ||
+            normalizeSessionUrl(value) !== scope.sessionUrl,
         )
       )
         throw new HttpError(
@@ -157,7 +166,7 @@ export async function gatewayRequest(
     );
   let response: Response;
   try {
-    response = await request("https://api.fullstory.com/mcp/subtext", {
+    response = await request(subtextEndpoint(scope.subtextApiUrl), {
       method: "POST",
       headers,
       body: JSON.stringify(rpc),

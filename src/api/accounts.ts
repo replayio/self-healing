@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { z } from "zod";
+import { subtextEndpoint } from "./subtext-endpoint.ts";
 import { credentialVault } from "./credentials.ts";
 import { HttpError } from "./errors.ts";
 import { qaClient, type QAClient } from "./qa.ts";
@@ -10,6 +11,7 @@ import type { Query } from "./store.ts";
 const AccountRow = z.object({
   id: z.string().uuid(),
   subtext_fingerprint: z.string(),
+  subtext_api_url: z.string(),
   encrypted_subtext_key: z.string(),
   api_key_hash: z.string(),
   encrypted_api_key: z.string(),
@@ -37,23 +39,26 @@ export function accountService(
     return AccountRow.parse(row);
   };
   return {
-    async provisionAccount(key: string) {
+    async provisionAccount(key: string, apiUrl?: string) {
+      const endpoint = subtextEndpoint(apiUrl);
       await validate(
         new Request("https://self-healing.invalid/provision", {
           headers: { Authorization: `Bearer ${key}` },
         }),
+        endpoint,
       );
       const fingerprint = vault.identity(key);
       const apiKey = `sh_${randomBytes(32).toString("hex")}`;
       await query(
-        `INSERT INTO accounts(id,subtext_fingerprint,encrypted_subtext_key,api_key_hash,encrypted_api_key)
-        VALUES ($1,$2,$3,$4,$5) ON CONFLICT(subtext_fingerprint) DO NOTHING`,
+        `INSERT INTO accounts(id,subtext_fingerprint,encrypted_subtext_key,api_key_hash,encrypted_api_key,subtext_api_url)
+        VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(subtext_fingerprint) DO NOTHING`,
         [
           randomUUID(),
           fingerprint,
           vault.encrypt(key, fingerprint),
           digest(apiKey),
           vault.encrypt(apiKey, fingerprint),
+          endpoint,
         ],
       );
       const [row] = await query(
@@ -61,6 +66,12 @@ export function accountService(
         [fingerprint],
       );
       let account = AccountRow.parse(row);
+      if (account.subtext_api_url !== endpoint)
+        throw new HttpError(
+          409,
+          "subtext_endpoint_conflict",
+          "This key is already provisioned with a different Subtext endpoint. Use the original endpoint.",
+        );
       if (!account.encrypted_qa_token) {
         const lease = randomUUID();
         const locked = await query(
@@ -162,6 +173,7 @@ export function accountService(
           "Account provisioning is incomplete.",
         );
       return {
+        subtextApiUrl: account.subtext_api_url,
         subtextKey: vault.decrypt(
           account.encrypted_subtext_key,
           account.subtext_fingerprint,

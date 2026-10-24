@@ -43,6 +43,7 @@ async function deploy() {
     ["/api/v1/health", '"status":"ok"'],
     ["/api/v1/openapi.json", '"openapi":'],
     ["/api/v1/skills/setup-self-healing/SKILL.md", "name: setup-self-healing"],
+    ["/api/v1/skills/update-self-healing/SKILL.md", "name: update-self-healing"],
   ]) {
     const response = await fetch(origin + path, {
       signal: AbortSignal.timeout(30_000),

@@ -3,6 +3,16 @@
 Temporary browser capture support for Self Healing while Subtext gains the accessors needed for
 network exchanges, interactions, identity, metrics, and session context.
 
+## Updating an existing installation
+
+**Agents: follow the public [Self Healing update skill](https://self-healing.replay.io/api/v1/skills/update-self-healing/SKILL.md)
+and read the target release's [UPGRADING.md](./UPGRADING.md) before updating this dependency.**
+It ships in the npm package at
+`node_modules/@replayio/self-healing-capture/UPGRADING.md` and covers changes to
+application-owned initialization and forwarding code, not just the lockfile.
+No original installer conversation is needed. In particular, old installations
+may contain a 256 KiB forwarding check that a dependency update cannot remove.
+
 **Installation and integration instructions live in the
 [Self Healing setup skill](https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md).**
 Follow that skill for account provisioning, browser initialization, server forwarding, automatic reviews,
@@ -12,17 +22,27 @@ QA consumes compatible versioned artifacts and recognizes the package/version pr
 ingestion and review code does not import this package. When Subtext supplies the required accessors,
 the Self Healing skills will describe the replacement and migration.
 
+## Oversized exchanges
+
+`maxNetworkCaptureBytes` bounds each serialized exchange (default 1,000,000 bytes;
+minimum 1,024). Oversized exchanges stay in the capture. Text retains a truncated
+prefix ending in `[qa_redacted]`; JSON replaces the largest string values and, when
+needed, object/array subtrees with that marker. Small fields are preserved when possible.
+`redacted.request_body`, `redacted.response_body`, and `redacted.metadata` identify
+modified fields. Extremely large headers or URLs are reduced as a last resort.
+QA uses these records as evidence for session replay configuration, not exact responses.
+
 ## Development and release
 
 The capture implementation lives in `packages/capture/src`. Change producers here and keep QA’s
-independent ingestion schemas and compatibility tests compatible. Installation instructions belong
-only in the Self Healing skills.
+independent ingestion schemas and compatibility tests compatible. Initial installation instructions live in the Self Healing skills. Every release
+that changes application integration requirements must add a versioned migration
+to UPGRADING.md and include verification steps.
 
 Publish locally with interactive npm authentication and 2FA:
 
 ```sh
-npm ci
-npm run capture:publish
+npm ci && npm run capture:publish
 ```
 
 Run from a terminal using Node 22.14+ and an npm account with publishing access to `@replayio`.
@@ -53,3 +73,9 @@ current session context and metrics are sent after retries so an older batch can
 `flush()` rejects while any batch remains undelivered, and succeeds once they have all been accepted.
 
 Release tests and builds print concise progress; their full output is shown only if they fail.
+
+Captured network exchanges include optional `timing: { response_ms, total_ms? }` in
+milliseconds from dispatch. The producer measures response headers and cloned-body
+completion with `performance.now()`, before waiting on request-body capture or
+upload work. A failed body read omits `total_ms`; zero is a valid duration. These
+are original-session measurements, independent of how long a reconstruction takes.

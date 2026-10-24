@@ -10,6 +10,7 @@ import { requireAccountWork } from "./account-policy.ts";
 export interface AccountServices {
   qa: QAClient;
   subtextKey: string;
+  subtextApiUrl?: string;
   connections: ReturnType<typeof getConnectionService>;
 }
 export type AccountServiceResolver = (
@@ -44,6 +45,7 @@ export function accountServiceResolver(
     return {
       qa,
       subtextKey: credentials.subtextKey,
+      subtextApiUrl: credentials.subtextApiUrl,
       connections: (dependencies.connections ?? getConnectionService)(
         credentials.qaToken,
         qa,

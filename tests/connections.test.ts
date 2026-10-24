@@ -13,12 +13,13 @@ import { qaClient } from "../src/api/qa.ts";
 const vault = credentialVault(Buffer.alloc(32, 7).toString("base64"));
 const settings = { name: "Example", production_url: "https://example.com" };
 const sessionUrl = "https://app.fullstory.com/ui/org/session/1";
-async function fixture(authorizeWork: (account: string) => Promise<void> = async () => {}) {
+async function fixture(endpoint?: string, authorizeWork: (account: string) => Promise<void> = async () => {}) {
   const db = new PGlite();
   for (const name of [
     "002_connections.sql",
     "003_session_coordination.sql",
     "004_accounts.sql",
+    "009_subtext_endpoint.sql",
     "006_connection_exploration.sql",
   ])
     await db.exec(
@@ -98,7 +99,21 @@ async function fixture(authorizeWork: (account: string) => Promise<void> = async
     "https://healing.example",
     authorizeWork,
   );
-  const account = vault.identity("customer-key");
+  const account = endpoint
+    ? "c6f31a1a-198a-4ee7-bf44-88b9759988de"
+    : vault.identity("customer-key");
+  if (endpoint)
+    await query(
+      `INSERT INTO accounts(id,subtext_fingerprint,encrypted_subtext_key,api_key_hash,encrypted_api_key,subtext_api_url) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        account,
+        vault.identity("customer-key"),
+        vault.encrypt("customer-key", vault.identity("customer-key")),
+        "unused-hash",
+        "unused-encrypted-key",
+        endpoint,
+      ],
+    );
   return {
     db,
     query,
@@ -275,8 +290,11 @@ test("previously sealed sessions accept new captures without installer intervent
     await f.db.close();
   }
 });
-test("callback enforces session and MCP-client scope without exposing upstream credentials", async () => {
-  const f = await fixture();
+async function checkCallbackEndpoint(
+  endpoint?: string,
+  sessionUrl = "https://app.fullstory.com/ui/org/session/1",
+) {
+  const f = await fixture(endpoint);
   try {
     await f.service.connect(f.account, "customer-key", settings);
     await f.service.action(f.account, "session", { session_url: sessionUrl });
@@ -288,24 +306,32 @@ test("callback enforces session and MCP-client scope without exposing upstream c
     const id = parts[4]!,
       token = parts[6]!;
     let upstreamCalls = 0;
+    const openedArguments: unknown[] = [];
     const upstream: typeof fetch = async (_url, init) => {
       upstreamCalls++;
-      assert.equal(String(_url), "https://api.fullstory.com/mcp/subtext");
+      assert.equal(
+        String(_url),
+        endpoint ?? "https://api.fullstory.com/mcp/subtext",
+      );
       assert.equal(
         new Headers(init?.headers).get("authorization"),
         "Bearer customer-key",
       );
       const rpc = JSON.parse(String(init?.body)) as {
         method: string;
-        params?: { name: string };
+        params?: { name: string; arguments: unknown };
       };
+      if (rpc.params?.name === "review-open")
+        openedArguments.push(rpc.params.arguments);
       return Response.json(
         {
           jsonrpc: "2.0",
           id: 1,
           result:
             rpc.params?.name === "review-open"
-              ? { content: [{ type: "text", text: "client_id: owned-client" }] }
+              ? {
+                  content: [{ type: "text", text: "client_id: owned-client" }],
+                }
               : {},
         },
         { headers: { "mcp-session-id": "upstream-secret" } },
@@ -321,7 +347,11 @@ test("callback enforces session and MCP-client scope without exposing upstream c
         rpc,
         upstream,
       );
-    const init = await invoke({ jsonrpc: "2.0", method: "initialize", id: 1 });
+    const init = await invoke({
+      jsonrpc: "2.0",
+      method: "initialize",
+      id: 1,
+    });
     const context = init.headers.get("mcp-session-id")!;
     assert.notEqual(context, "upstream-secret");
     const call = (name: string, args: unknown) => ({
@@ -345,6 +375,69 @@ test("callback enforces session and MCP-client scope without exposing upstream c
       context,
     );
     assert.equal(upstreamCalls, 3);
+    const metadata = {
+      sightmap: [
+        {
+          name: "Session_Save",
+          selectors: ["main button.save"],
+          source: "src/Save.tsx",
+          memory: ["Saves the current document"],
+          tags: ["control"],
+          parentChain: ["SessionPage"],
+          properties: [
+            { name: "label", extract: "text", description: "Button label" },
+          ],
+        },
+      ],
+      memory: ["Document editor"],
+    };
+    for (const alias of ["url", "session_url", "sessionUrl"]) {
+      const args = { [alias]: sessionUrl, ...metadata };
+      await invoke(call("review-open", args), context);
+      assert.deepEqual(openedArguments.at(-1), args);
+    }
+    // Semantic context must not bypass scope checks or choose another session.
+    const callsBeforeRejected = upstreamCalls;
+    for (const args of [
+      { ...metadata },
+      { url: sessionUrl + "other", ...metadata },
+      { url: sessionUrl, session_url: sessionUrl + "other", ...metadata },
+      { sessionUrl: sessionUrl, url: sessionUrl + "other", ...metadata },
+      { url: sessionUrl, ...metadata, trace_id: "another-trace" },
+      {
+        url: sessionUrl,
+        ...metadata,
+        trace_url: "https://example.com/trace",
+      },
+      {
+        url: sessionUrl,
+        ...metadata,
+        device_id: "other",
+        session_id: "other",
+      },
+      { url: sessionUrl, ...metadata, email_address: "other@example.com" },
+      { url: sessionUrl, ...metadata, user_uid: "other-user" },
+      { url: sessionUrl, ...metadata, unexpected: true },
+      { url: sessionUrl, sightmap: "invalid" },
+      { url: sessionUrl, sightmap: [{ name: "Bad", selectors: [42] }] },
+      {
+        url: sessionUrl,
+        sightmap: [
+          {
+            name: "Bad",
+            selectors: ["body"],
+            properties: [{ name: "x", extract: 42 }],
+          },
+        ],
+      },
+      { url: sessionUrl, memory: [42] },
+    ]) {
+      await assert.rejects(invoke(call("review-open", args), context), {
+        status: 403,
+        code: "session_scope",
+      });
+    }
+    assert.equal(upstreamCalls, callsBeforeRejected);
     // A fresh MCP context may reuse a client opened for this same session after a reconnect.
     const reinit = await invoke({
       jsonrpc: "2.0",
@@ -391,7 +484,14 @@ test("callback enforces session and MCP-client scope without exposing upstream c
   } finally {
     await f.db.close();
   }
-});
+}
+test("callback enforces session and MCP-client scope at the default endpoint", () =>
+  checkCallbackEndpoint());
+test("callback uses the saved staging endpoint with the same session isolation", () =>
+  checkCallbackEndpoint(
+    "https://api.staging.fullstory.com/mcp/subtext",
+    "https://app.staging.fullstory.com/ui/org/session/123:456",
+  ));
 test("connection responses hide internal credentials and QA transport uses existing API paths", async () => {
   const f = await fixture();
   try {
@@ -401,6 +501,7 @@ test("connection responses hide internal credentials and QA transport uses exist
       connections: () => f.service,
       accounts: () => ({
         credentials: async () => ({
+          subtextApiUrl: "https://api.fullstory.com/mcp/subtext",
           subtextKey: "customer-key",
           qaToken: "qa-token",
         }),
@@ -470,6 +571,7 @@ test("package producer metadata passes HTTP validation and is forwarded unchange
       connections: () => f.service,
       accounts: () => ({
         credentials: async () => ({
+          subtextApiUrl: "https://api.fullstory.com/mcp/subtext",
           subtextKey: "customer-key",
           qaToken: "qa-token",
         }),
@@ -663,6 +765,7 @@ test("HTTP connection validates and returns the saved exploration choice", async
       connections: () => f.service,
       accounts: () => ({
         credentials: async () => ({
+          subtextApiUrl: "https://api.fullstory.com/mcp/subtext",
           subtextKey: "customer-key",
           qaToken: "qa-token",
         }),
@@ -856,7 +959,7 @@ test("callback failures return JSON with upstream status and bounded, redacted d
 
 test("authenticated session callbacks check account policy before provider access", async () => {
   let checkedAccount = "";
-  const f = await fixture(async account => { checkedAccount = account; throw new Error("account work disabled"); });
+  const f = await fixture(undefined, async account => { checkedAccount = account; throw new Error("account work disabled"); });
   try {
     await f.service.connect(f.account, "customer-key", settings);
     await f.service.action(f.account, "session", { session_url: sessionUrl });
@@ -867,4 +970,53 @@ test("authenticated session callbacks check account policy before provider acces
     }), /account work disabled/);
     assert.equal(checkedAccount, f.account);
   } finally { await f.db.close(); }
+});
+
+test("Fullstory wildcard hosts are forwarded and retries deduplicated", async () => {
+  const f = await fixture("https://api.staging.fullstory.com/mcp/subtext");
+  try {
+    await f.service.connect(f.account, "customer-key", settings);
+    for (const [host, kind] of [
+      ["app.staging.fullstory.com", "session"],
+      ["app.future-region.fullstory.com", "client-session"],
+      ["replay.internal.preview.fullstory.com", "trace"],
+    ]) {
+      const url = `https://${host}/ui/org/${kind}/123:456`;
+      const input = { session_url: url + "#at=1000" };
+      const first = await f.service.action(f.account, "session", input);
+      assert.equal(first.status, "stored");
+      assert.deepEqual(
+        await f.service.action(f.account, "session", input),
+        first,
+      );
+      const upload = f.calls
+        .filter((c) => c.path === "/api/project-session/register")
+        .at(-1)!.body as { session_url: string; auxiliary_data: unknown[] };
+      assert.equal(upload.session_url, url);
+      assert.deepEqual(upload.auxiliary_data, []);
+    }
+    assert.equal(
+      f.calls.filter((c) => c.path === "/api/project-session/register").length,
+      3,
+    );
+    for (const url of [
+      "https://notfullstory.com/ui/org/session/1",
+      "https://fullstory.com/ui/org/session/1",
+      "http://app.staging.fullstory.com/ui/org/session/1",
+      "https://app.staging.fullstory.com.evil.example/ui/org/session/1",
+      "https://user:password@app.staging.fullstory.com/ui/org/session/1",
+      "https://app.staging.fullstory.com/ui/org/settings",
+    ]) {
+      await assert.rejects(
+        f.service.action(f.account, "session", { session_url: url }),
+        { status: 400, code: "invalid_session" },
+      );
+    }
+    assert.equal(
+      f.calls.filter((c) => c.path === "/api/project-session/register").length,
+      3,
+    );
+  } finally {
+    await f.db.close();
+  }
 });

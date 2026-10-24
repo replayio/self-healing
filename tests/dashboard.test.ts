@@ -165,6 +165,7 @@ test("HTTP dashboard cookies are read-only, same-origin, scoped and never substi
           assert.equal(id, account);
           return {
             qaToken: "dedicated-qa-token",
+            subtextApiUrl: "https://api.fullstory.com/mcp/subtext",
             subtextKey: "never-expose-subtext",
           };
         },

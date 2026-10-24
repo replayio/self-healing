@@ -261,7 +261,7 @@ test("invalid JSON, identifiers, empty patches, unknown fields and protocols are
   );
 });
 
-test("body limit and content type are enforced before storage", async () => {
+test("content type is enforced without a separate server request-size limit", async () => {
   const request = (body: string, contentType: string) =>
     new Request("https://example.com/api/v1/projects", {
       method: "POST",
@@ -273,12 +273,12 @@ test("body limit and content type are enforced before storage", async () => {
     (
       await handler(
         request(
-          JSON.stringify({ text: "a".repeat(256 * 1024) }),
+          " ".repeat(2_000_000) + JSON.stringify(input),
           "application/json",
         ),
       )
     ).status,
-    413,
+    201,
   );
 });
 

@@ -42,7 +42,6 @@ export function getOpenApiSpec() {
       405: "Method not allowed",
       409: "Conflict",
       410: "Expired event cursor",
-      413: "Body exceeds 256 KiB",
       415: "Expected application/json",
       429: "QA review capacity unavailable; retry with backoff",
       500: "Internal error",

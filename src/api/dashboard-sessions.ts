@@ -1,3 +1,4 @@
+import { subtextEndpoint } from "./subtext-endpoint.ts";
 import { z } from "zod";
 import {
   DashboardSessions,
@@ -42,6 +43,7 @@ export function dashboardSessions(
   qa: QAClient,
   key: string,
   request: typeof fetch = fetch,
+  endpoint?: string,
 ) {
   async function list(c: Connection, query: Record<string, unknown>) {
     const value = await qa(
@@ -95,7 +97,7 @@ export function dashboardSessions(
       params?: unknown,
       notification = false,
     ): Promise<unknown> {
-      const response = await request("https://api.fullstory.com/mcp/subtext", {
+      const response = await request(subtextEndpoint(endpoint), {
         method: "POST",
         redirect: "error",
         signal,

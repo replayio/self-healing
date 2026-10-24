@@ -1,10 +1,19 @@
+import { interactionSelector } from "./interaction-selector.js";
+import { redactExchange, type Redaction } from "./redaction.js";
 import { FullStory, init } from "@fullstory/browser";
-import { decodeCaptureBody, splitBatches, type Artifact } from "./transport.js";
+import {
+  decodeCaptureBody,
+  splitBatches,
+  DEFAULT_MAX_NETWORK_CAPTURE_BYTES,
+  type Artifact,
+} from "./transport.js";
 
 export interface CaptureOptions {
   orgId: string;
   /** Same-origin POST route holding the server-side credential. */
   endpoint?: string;
+  /** Maximum UTF-8 JSON bytes per network exchange (bodies, headers and metadata). Defaults to 1,000,000. */
+  maxNetworkCaptureBytes?: number;
   onError?: (error: Error) => void;
 }
 export interface CaptureController {
@@ -35,9 +44,11 @@ function countsAsSessionInteraction(event: Event): boolean {
 }
 
 type CapturedExchange = {
+  redacted?: Redaction;
   id: string;
   captured_at: number;
   source_timestamp: number;
+  timing: { response_ms: number; total_ms?: number };
   method: string;
   url: string;
   status: number;
@@ -70,9 +81,6 @@ type CapturedInteraction = {
   inputType?: string;
 };
 
-const MAX_BODY_BYTES = 1_000_000;
-const MAX_CAPTURE_BYTES = 8_000_000;
-const MAX_CAPTURED_INTERACTIONS = 5_000;
 const ACTIONABLE_SELECTOR =
   'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="checkbox"], [role="menuitem"], [role="option"], [role="radio"], [role="switch"], [role="tab"], [contenteditable="true"]';
 let setCapturedUserEmail: ((email: string) => void) | null = null;
@@ -100,10 +108,22 @@ function identifyFullStoryUser(user: FullStoryUser | null): void {
 export function initCapture(options: CaptureOptions): CaptureController {
   if (typeof window === "undefined")
     throw new Error("initCapture must run in the browser");
+  const maxNetworkCaptureBytes =
+    options.maxNetworkCaptureBytes ?? DEFAULT_MAX_NETWORK_CAPTURE_BYTES;
+  if (
+    !Number.isSafeInteger(maxNetworkCaptureBytes) ||
+    maxNetworkCaptureBytes < 1024
+  )
+    throw new Error(
+      "maxNetworkCaptureBytes must be a safe integer of at least 1024 bytes",
+    );
   if (active) {
     if (
       options.orgId !== activeOptions?.orgId ||
-      options.endpoint !== activeOptions?.endpoint
+      options.endpoint !== activeOptions?.endpoint ||
+      maxNetworkCaptureBytes !==
+        (activeOptions?.maxNetworkCaptureBytes ??
+          DEFAULT_MAX_NETWORK_CAPTURE_BYTES)
     ) {
       throw new Error("Capture is already initialized with different options");
     }
@@ -150,11 +170,8 @@ export function initCapture(options: CaptureOptions): CaptureController {
       previousSessionUrl,
       capturedExchanges: [] as CapturedExchange[],
       capturedInteractions: [] as CapturedInteraction[],
-      capturedBytes: 0,
       interactionCount: 0,
-      queuedExchangeCount: 0,
       queuedInteractionCount: -1,
-      queuedCapturedInteractionCount: 0,
       pendingBatches: [] as string[],
       uploadError: undefined as Error | undefined,
       userEmail,
@@ -162,7 +179,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
       uploadTimer: null as ReturnType<typeof setTimeout> | null,
       uploadChain: Promise.resolve(),
       droppedNetworkCount: 0,
-      droppedInteractionCount: 0,
       queuedContext: "",
     };
   }
@@ -208,11 +224,10 @@ export function initCapture(options: CaptureOptions): CaptureController {
     uploadCapture(session);
   };
 
-  async function boundedBody(
+  async function captureBody(
     value: Request | Response,
   ): Promise<string | null> {
     const bytes = await value.clone().arrayBuffer();
-    if (bytes.byteLength > MAX_BODY_BYTES) return null;
     return decodeCaptureBody(bytes);
   }
 
@@ -252,7 +267,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
 
   async function drainCaptureUpload(session: CaptureSession): Promise<void> {
     const exchanges = session.capturedExchanges
-      .slice(session.queuedExchangeCount)
       .map(
         ({ startup_body: _body, status_text: _status, ...exchange }) =>
           exchange,
@@ -263,14 +277,14 @@ export function initCapture(options: CaptureOptions): CaptureController {
       page_started_at: performance.timeOrigin,
       previous_session_url: session.previousSessionUrl,
       dropped_network_count: session.droppedNetworkCount,
-      dropped_interaction_count: session.droppedInteractionCount,
+      dropped_interaction_count: 0,
     });
     const auxiliaryData: Artifact[] = [
       {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.1" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.7" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
@@ -286,7 +300,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
                     page_started_at: performance.timeOrigin,
                     previous_session_url: session.previousSessionUrl,
                     dropped_network_count: session.droppedNetworkCount,
-                    dropped_interaction_count: session.droppedInteractionCount,
+                    dropped_interaction_count: 0,
                   },
                 ],
               },
@@ -303,8 +317,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
             },
           ]
         : []),
-      ...(session.capturedInteractions.length !==
-      session.queuedCapturedInteractionCount
+      ...(session.capturedInteractions.length > 0
         ? [
             {
               namespace: "interaction",
@@ -312,9 +325,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
               schema_version: 1,
               payload: {
                 version: 1,
-                interactions: session.capturedInteractions.slice(
-                  session.queuedCapturedInteractionCount,
-                ),
+                interactions: session.capturedInteractions,
               },
             },
           ]
@@ -349,19 +360,22 @@ export function initCapture(options: CaptureOptions): CaptureController {
     if (auxiliaryData.length === 1 && !session.pendingBatches.length) return;
     let batches: string[];
     try {
-      batches = splitBatches({
-        session_url: session.sessionUrl!,
-        auxiliary_data: auxiliaryData,
-      });
+      batches = splitBatches(
+        {
+          session_url: session.sessionUrl!,
+          auxiliary_data: auxiliaryData,
+        },
+        maxNetworkCaptureBytes,
+      );
     } catch (error) {
       reportError(error);
       return;
     }
     session.queuedContext = context;
-    session.queuedExchangeCount = session.capturedExchanges.length;
+    // Serialized batches own retries; do not retain the uploaded recording history.
+    session.capturedExchanges = [];
     session.queuedInteractionCount = session.interactionCount;
-    session.queuedCapturedInteractionCount =
-      session.capturedInteractions.length;
+    session.capturedInteractions = [];
     session.queuedUserEmail = session.userEmail;
     session.pendingBatches.push(...batches);
     const failed: string[] = [];
@@ -395,42 +409,17 @@ export function initCapture(options: CaptureOptions): CaptureController {
     }, 250);
   }
 
-  function selectorFor(element: Element): string | null {
-    const tag = element.tagName.toLowerCase();
-    const testId = element.getAttribute("data-testid");
-    const candidate = (selector: string) =>
-      selector.length <= 2_000 ? selector : null;
-    if (testId) return candidate(`[data-testid=${JSON.stringify(testId)}]`);
-    if (element.id) return candidate(`#${CSS.escape(element.id)}`);
-    const ariaLabel = element.getAttribute("aria-label");
-    if (ariaLabel)
-      return candidate(`${tag}[aria-label=${JSON.stringify(ariaLabel)}]`);
-    const name = element.getAttribute("name");
-    if (name) return candidate(`${tag}[name=${JSON.stringify(name)}]`);
-    const label = (element.textContent ?? "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 500);
-    return label
-      ? candidate(`${tag}:has-text(${JSON.stringify(label)})`)
-      : null;
-  }
-
   function recordInteraction(event: Event): void {
     if (stopped || !event.isTrusted) return;
     const session = captureSession();
     if (!session) return;
     if (countsAsSessionInteraction(event)) session.interactionCount++;
-    if (session.capturedInteractions.length >= MAX_CAPTURED_INTERACTIONS) {
-      session.droppedInteractionCount++;
-      return uploadCapture(session);
-    }
     const path = event
       .composedPath()
       .filter((item): item is Element => item instanceof Element);
     const target =
       path.find((element) => element.matches(ACTIONABLE_SELECTOR)) ?? path[0];
-    const selector = target ? selectorFor(target) : null;
+    const selector = target ? interactionSelector(target) : null;
     const label = target
       ? (
           target.getAttribute("aria-label") ||
@@ -529,12 +518,13 @@ export function initCapture(options: CaptureOptions): CaptureController {
     const session = captureSession();
     if (!session) return nativeFetch(request);
     const startedBeforeReady = !fullStoryReady;
-    const sourceTimestamp = Math.round(performance.now());
+    const started = performance.now();
+    const sourceTimestamp = Math.round(started);
     const capturedAt = performance.timeOrigin + sourceTimestamp;
     const exchangeId = crypto.randomUUID();
     const requestBody =
       request.method !== "GET" && request.method !== "HEAD"
-        ? boundedBody(request).catch(() => null)
+        ? captureBody(request).catch(() => null)
         : Promise.resolve(null);
     const responsePromise = nativeFetch(request);
     inFlight.add(responsePromise);
@@ -544,45 +534,42 @@ export function initCapture(options: CaptureOptions): CaptureController {
     } finally {
       inFlight.delete(responsePromise);
     }
+    const responseMs = performance.now() - started;
     const capture = (async () => {
       const clone = response.clone();
       const responseBytes = await clone.arrayBuffer().catch(() => null);
+      // Stamp body completion before waiting on request capture or serializing/uploading.
+      const totalMs =
+        responseBytes === null ? undefined : performance.now() - started;
       const capturedRequestBody = await requestBody;
-      const exchangeBytes =
-        (responseBytes?.byteLength ?? 0) +
-        new TextEncoder().encode(capturedRequestBody ?? "").byteLength;
-      if (
-        session.capturedBytes + exchangeBytes > MAX_CAPTURE_BYTES ||
-        session.capturedExchanges.length >= 5_000
-      ) {
-        session.droppedNetworkCount++;
-        uploadCapture(session);
-        return;
-      }
-
       const exchange: CapturedExchange = {
         id: exchangeId,
         captured_at: capturedAt,
         source_timestamp: sourceTimestamp,
+        timing: {
+          response_ms: responseMs,
+          ...(totalMs === undefined ? {} : { total_ms: totalMs }),
+        },
         method: request.method,
         url: request.url,
         status: clone.status,
         request_headers: Object.fromEntries(request.headers.entries()),
         request_body: capturedRequestBody,
         response_headers: Object.fromEntries(clone.headers.entries()),
-        response_body:
-          responseBytes && responseBytes.byteLength <= MAX_BODY_BYTES
-            ? decodeCaptureBody(responseBytes)
-            : null,
+        response_body: responseBytes ? decodeCaptureBody(responseBytes) : null,
         ...(startedBeforeReady &&
         (request.method === "GET" || request.method === "HEAD") &&
-        responseBytes &&
-        responseBytes.byteLength <= MAX_BODY_BYTES
+        responseBytes
           ? { startup_body: responseBytes, status_text: clone.statusText }
           : {}),
       };
-      session.capturedBytes += exchangeBytes;
-      session.capturedExchanges.push(exchange);
+      const {
+        startup_body: _startup,
+        status_text: _status,
+        ...uploadedExchange
+      } = exchange;
+      const bounded = redactExchange(uploadedExchange, maxNetworkCaptureBytes);
+      session.capturedExchanges.push({ ...exchange, ...bounded });
       uploadCapture(session);
       if (!stopped && fullStoryReady && exchange.startup_body) {
         await replayForFullStory(exchange);

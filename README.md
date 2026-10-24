@@ -25,6 +25,8 @@ Factories call `POST /api/v1/dashboard-sessions` with their account bearer key a
 
 Setup looks for an existing project reporting destination and asks the user when a suitable channel, recipient, or credential is missing. `GET` and `PATCH /api/v1/connection/report-destinations` configure email, Slack, or Discord through the connected QA project's existing delivery API. Only supplied channels change; webhook URLs are write-only. QA owns storage and delivery of completed daily reports. No new Self Healing secrets, tables, or delivery worker are needed.
 
+The default writing prompt in `src/api/connections.ts` asks for a 2–3 sentence overview and at most 12 concise, titled findings, prioritized by user impact and supported by evidence. It is saved in QA during connection setup. Changes to this default apply to newly configured summarizers; existing connections retain their saved prompts, including custom instructions. To change an existing report's instructions, an authorized QA project editor can edit the **Daily user behavior** summarizer's **Settings → Summary prompt**. Self Healing's read-only dashboard does not expose this setting. Prompt edits affect future generations, not previously saved reports.
+
 ## Capture package
 
 All installation instructions live in the [Self Healing setup skill](public/api/v1/skills/setup-self-healing/SKILL.md). [`@replayio/self-healing-capture`](packages/capture/README.md) temporarily supplies auxiliary capture until Subtext has the required accessors. QA consumes compatible artifacts without importing the package; session configuration is API-only. See the package README for contributor release instructions.
@@ -40,6 +42,10 @@ npm run dev:netlify      # landing page + REST API, http://localhost:8888
 npm test                 # isolated PGlite Postgres tests; no external services
 npm run build            # strict TypeScript check + production frontend
 ```
+
+Browser-backed capture selector tests run separately in PR CI. To run them locally,
+use `npx playwright install chromium` followed by `npm run test:browser`. They are
+not part of `npm test`, production deployment, or package publishing.
 
 For local database development, copy `.env.example` to `.env`, set `DATABASE_URL`, and apply the bootstrap migration with `node --env-file=.env --import tsx scripts/migrate.ts`. Netlify Dev loads `.env` automatically.
 
@@ -58,9 +64,10 @@ Set `SELF_HEALING_URL` to your deployed origin and `SELF_HEALING_API_KEY` to the
 - `GET /api/v1/openapi.json` — schemas, operation IDs, and `x-implementation-status` for every operation.
 - `GET /api/v1/skills/setup-self-healing/SKILL.md` — project setup.
 - `GET /api/v1/skills/operate-self-healing/SKILL.md` — bug/fix/report loop and stopping conditions.
+- `GET /api/v1/skills/update-self-healing/SKILL.md` — update an existing capture package and application integration using the target release's bundled migrations, then verify session delivery.
 - `GET /api/v1/health` — liveness only, not database or provider readiness.
 
-First POST `/api/v1/accounts` with JSON `{"subtext_api_key":"<Subtext key>"}`. Save the returned `api_key` in your factory's secret store. Repeating provisioning with the same validated Subtext key returns the same account/key.
+First POST `/api/v1/accounts` with JSON `{"subtext_api_key":"<Subtext key>"}`. Save the returned `api_key` in your factory's secret store. Repeating provisioning with the same validated Subtext key and endpoint returns the same account/key. For an EU or staging project, also pass `subtext_api_url` (`https://api.eu1.fullstory.com/mcp/subtext` or `https://api.staging.fullstory.com/mcp/subtext`). Omission selects US production. The endpoint is stored with the account and used for its connected project’s Subtext authentication, QA callbacks, and dashboard reads; it is not a deployment-wide setting. The production deployment workflow automatically applies `009_subtext_endpoint.sql` before publishing this support; existing accounts keep the production endpoint. No manual production migration is needed.
 
 ```sh
 curl --fail-with-body "$SELF_HEALING_URL/api/v1/connection" \
@@ -69,7 +76,7 @@ curl --fail-with-body "$SELF_HEALING_URL/api/v1/connection" \
   -d '{"name":"My app","production_url":"https://app.example.com"}'
 ```
 
-Use the same key for `/api/v1/connection/sessions`, `/reviews`, and `/reports`. See [the integration guide](docs/obvious-integration.md) for batching, automatic reviews, retries and report timing. All JSON write bodies are limited to 256 KiB.
+Use the same key for `/api/v1/connection/sessions`, `/reviews`, and `/reports`. See [the integration guide](docs/obvious-integration.md) for batching, automatic reviews, retries and report timing. The capture client defaults to 1 MB (1,000,000 UTF-8 JSON bytes) per network exchange, configurable via `maxNetworkCaptureBytes`; batching is internal and the service does not enforce a separate request-size limit.
 
 The separate `/api/v1/projects` API stores local configuration. Its configuration PUTs replace the full document and do not activate provider work. Its project creation POST remains non-idempotent; use the connection API above to provision QA.
 
