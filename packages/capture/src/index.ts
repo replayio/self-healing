@@ -9,23 +9,22 @@ import {
   type Artifact,
 } from "./transport.js";
 
-export type CaptureOptions = ({
+export interface CaptureOptions {
+  orgId: string;
+  /** Same-origin POST route holding the server-side credential. */
+  endpoint?: string;
+  /** Maximum UTF-8 JSON bytes per network exchange (bodies, headers and metadata). Defaults to 1,000,000. */
+  maxNetworkCaptureBytes?: number;
+  onError?: (error: Error) => void;
+}
+export interface ManagedCaptureOptions extends Omit<CaptureOptions, "orgId" | "endpoint"> {
   publishableKey: string;
   /** Override only for a QA preview deployment. */
   serviceUrl?: string;
   orgId?: never;
   endpoint?: never;
-} | {
-  orgId: string;
-  /** Same-origin POST route holding the server-side credential. */
-  endpoint?: string;
-  publishableKey?: never;
-  serviceUrl?: never;
-}) & {
-  /** Maximum UTF-8 JSON bytes per network exchange (bodies, headers and metadata). Defaults to 1,000,000. */
-  maxNetworkCaptureBytes?: number;
-  onError?: (error: Error) => void;
 }
+type CaptureInput = (CaptureOptions & { publishableKey?: never; serviceUrl?: never }) | ManagedCaptureOptions;
 export interface CaptureController {
   identify(user: FullStoryUser | null): void;
   /** Wait for in-flight captures and upload all known sessions. Rejects on capture/upload failure. */
@@ -34,7 +33,7 @@ export interface CaptureController {
   stop(): Promise<void>;
 }
 let active: CaptureController | undefined;
-let activeOptions: CaptureOptions | undefined;
+let activeOptions: CaptureInput | undefined;
 const CAPTURED_SESSION_INTERACTION_EVENTS = [
   "click",
   "change",
@@ -115,7 +114,7 @@ function identifyFullStoryUser(user: FullStoryUser | null): void {
   if (user.email) setCapturedUserEmail?.(user.email);
 }
 
-export function initCapture(options: CaptureOptions): CaptureController {
+export function initCapture(options: CaptureInput): CaptureController {
   if (typeof window === "undefined")
     throw new Error("initCapture must run in the browser");
   const maxNetworkCaptureBytes =

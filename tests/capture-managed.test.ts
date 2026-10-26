@@ -43,3 +43,13 @@ test('managed options hide routing configuration and reject arbitrary origins an
   assert.equal(client.isTransport('https://qa.replay.io/api/monitoring-register'), true);
   assert.equal(client.isTransport('https://qa.replay.io.example.com/api/monitoring-register'), false);
 });
+
+import type { CaptureOptions, ManagedCaptureOptions, initCapture } from '../packages/capture/src/index.ts';
+interface ApplicationCaptureOptions extends CaptureOptions { application: string }
+test('legacy CaptureOptions remains extendable with a required string orgId', () => {
+  const options: ApplicationCaptureOptions = { orgId: 'existing-org', application: 'app', endpoint: '/api/capture' };
+  const legacyInput: Parameters<typeof initCapture>[0] = options;
+  const directInput: ManagedCaptureOptions = { publishableKey: `lqc_${'a'.repeat(43)}` };
+  assert.equal(legacyInput.orgId.toUpperCase(), 'EXISTING-ORG');
+  assert.equal(directInput.orgId, undefined);
+});
