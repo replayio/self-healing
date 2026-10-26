@@ -21,8 +21,8 @@ the account provisioning and server forwarding procedure below:
    Use `serviceUrl` only when the supplied setup targets a QA preview HTTPS origin.
 3. Do not provision a Self Healing account, ask for a Subtext key, add a backend
    forwarding route, or expose a server credential. Do not load `qa-monitoring-v1.js`.
-   FullStory's recorder still loads from QA `/fs.js`; allow the QA origin in CSP
-   `script-src` and `connect-src`.
+   The upstream SDK loads FullStory's recorder from its CDN. In CSP, allow
+   `https://edge.fullstory.com` in `script-src` and the QA origin in `connect-src`.
 4. Follow the application's verification and deployment rules. Verify recorder
    uploads and HTTP 202 artifact registrations on QA, then confirm the session in
    the selected project. Report the package version and actual verification.

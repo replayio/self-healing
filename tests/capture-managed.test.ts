@@ -31,6 +31,7 @@ test('managed options hide routing configuration and reject arbitrary origins an
   const key = `lqc_${'a'.repeat(43)}`;
   const client = managedCapture({ publishableKey: key }, fetch);
   assert.equal(client.recorderOptions.orgId, 'replay');
+  assert.equal('script' in client.recorderOptions, false, 'use the upstream SDK default recorder delivery');
   assert.equal(client.endpoint.href, 'https://qa.replay.io/api/monitoring-register');
   assert.deepEqual(JSON.parse(client.encode(JSON.stringify({ session_url: 'https://qa.replay.io/ui/replay/client-session/device%3Asession', auxiliary_data: [] }))),
     { session: { id: 'device:session', kind: 'client-session' }, auxiliary_data: [] });

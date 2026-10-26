@@ -21,8 +21,9 @@ contracts. For QA previews only, pass `serviceUrl` with the preview HTTPS origin
 This mode requires QA's key-only capture and artifact-registration endpoints.
 
 The package includes the QA transport code; do not load `qa-monitoring-v1.js` too.
-FullStory's recorder still loads from the QA origin's `/fs.js`. CSP must allow that
-origin in `script-src` and `connect-src`. Preserve existing privacy/masking rules.
+The upstream `@fullstory/browser` SDK loads its recorder from FullStory's CDN using
+its default script setting. CSP must allow `https://edge.fullstory.com` in
+`script-src` and the QA origin in `connect-src`. Preserve existing privacy/masking rules.
 The publishable key grants ingestion only and is intentionally visible in browser
 code. Uploads omit cookies, reject redirects and use the project's origin allowlist.
 The fixed recorder alias is `replay`; actual FullStory routing stays on QA.

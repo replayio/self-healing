@@ -50,8 +50,8 @@ QA must have deployed the key-only capture protocol before using this mode.
 Verify successful recorder uploads and HTTP 202 responses from
 `/api/monitoring-register`, including network and interaction artifacts. Verify the
 session in the selected QA project. A metadata-only registration does not establish
-that auxiliary capture works. FullStory still loads its recorder from QA `/fs.js`;
-retain CSP permission for that origin in `script-src` and `connect-src`.
+that auxiliary capture works. The upstream SDK loads FullStory's recorder from its CDN; allow
+`https://edge.fullstory.com` in `script-src` and the QA origin in `connect-src`.
 
 ## 0.1.7 — Unique interaction selectors
 

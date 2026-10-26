@@ -39,7 +39,6 @@ export function managedCapture(options: { publishableKey: string; serviceUrl?: s
     recorderOptions: {
       orgId: "replay",
       host: `${endpoint.host}/api/fullstory-capture`,
-      script: `${endpoint.host}/fs.js`,
       // A recorder-local URL used only to identify sessions; QA builds the real FullStory URL.
       appHost: "qa.replay.io",
     },
