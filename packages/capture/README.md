@@ -3,6 +3,37 @@
 Temporary browser capture support for Self Healing while Subtext gains the accessors needed for
 network exchanges, interactions, identity, metrics, and session context.
 
+## Direct capture for a Replay QA project
+
+With a publishable `lqc_` key from the project's Self Healing setup, install version
+0.1.8 or later and the `@fullstory/browser` peer dependency, then initialize once
+before rendering the application:
+
+```ts
+import { initCapture } from '@replayio/self-healing-capture';
+const capture = initCapture({ publishableKey: 'lqc_...' });
+```
+
+No application backend route, server secret, FullStory org ID, or configuration
+bootstrap is required. QA resolves the key to its project and regional recording
+organization. `capture.identify(user)`, `flush()` and `stop()` retain their existing
+contracts. For QA previews only, pass `serviceUrl` with the preview HTTPS origin.
+This mode requires QA's key-only capture and artifact-registration endpoints.
+
+The package includes the QA transport code; do not load `qa-monitoring-v1.js` too.
+The upstream `@fullstory/browser` SDK loads its recorder from FullStory's CDN using
+its default script setting. CSP must allow `https://edge.fullstory.com` in
+`script-src` and the QA origin in `connect-src`. Preserve existing privacy/masking rules.
+The publishable key grants ingestion only and is intentionally visible in browser
+code. Uploads omit cookies, reject redirects and use the project's origin allowlist.
+The fixed recorder alias is `replay`; actual FullStory routing stays on QA.
+
+Direct capture accepts at most 2,000,000 bytes per network exchange (default
+1,000,000) so batches fit QA's 3 MB limit. Existing same-origin forwarding mode
+(`initCapture({ orgId, endpoint })`) remains supported and unchanged. Do not mix the
+two option sets or run both recorders. Key rotation takes effect on the next page
+load; repeated initialization with changed options throws.
+
 ## Updating an existing installation
 
 **Agents: follow the public [Self Healing update skill](https://self-healing.replay.io/api/v1/skills/update-self-healing/SKILL.md)

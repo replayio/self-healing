@@ -32,6 +32,27 @@ For the current complete setup contract, see
 https://self-healing.replay.io/api/v1/skills/setup-self-healing/SKILL.md.
 Use it to reconcile the existing integration; do not treat an upgrade as a new setup.
 
+## 0.1.8 — Direct Replay QA capture with a publishable key
+
+Existing `orgId`/same-origin forwarding integrations keep working without changes.
+Do not migrate an existing Self Healing account to managed QA capture unless the
+user has selected that QA project and supplied its publishable `lqc_` key.
+
+For QA-managed setup, replace the old monitoring snippet or recorder initialization
+with `initCapture({ publishableKey })`. Install the package and its peer dependency;
+remove the `qa-monitoring-v1.js` import and duplicate FullStory initialization.
+Keep identity hooks and privacy rules. Remove an old application forwarding route
+and its server credentials only when no remaining integration uses them.
+No customer backend endpoint or FullStory org/region configuration is required.
+For QA preview deployments, also pass the preview HTTPS origin as `serviceUrl`.
+
+QA must have deployed the key-only capture protocol before using this mode.
+Verify successful recorder uploads and HTTP 202 responses from
+`/api/monitoring-register`, including network and interaction artifacts. Verify the
+session in the selected QA project. A metadata-only registration does not establish
+that auxiliary capture works. The upstream SDK loads FullStory's recorder from its CDN; allow
+`https://edge.fullstory.com` in `script-src` and the QA origin in `connect-src`.
+
 ## 0.1.7 — Unique interaction selectors
 
 Update the package and application lockfile; no forwarding API changes are needed.

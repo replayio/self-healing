@@ -1,3 +1,4 @@
+import * as managed from "../packages/capture/src/managed.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -34,11 +35,15 @@ const UploadSchema = z.object({
   ),
 });
 
-for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
-  test(`package captures startup, rollover, in-flight responses, inputs and retries (limit ${maxNetworkCaptureBytes ?? "default"})`, async () => {
+for (const direct of [false, true]) for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
+  test(`package captures startup, rollover, in-flight responses, inputs and retries (direct ${direct}, limit ${maxNetworkCaptureBytes ?? "default"})`, async () => {
     const uploads: string[] = [];
     let failNext = false;
-    let sessionUrl = "https://app.fullstory.com/session/test";
+    const session = (name: string) => direct ? `https://qa.replay.io/ui/replay/session/device%3A${name}` : `https://app.fullstory.com/session/${name}`;
+    let sessionUrl = session("test");
+    const options = direct ? { publishableKey: `lqc_${"a".repeat(43)}` } : { orgId: "test" };
+    let interval: (() => void) | undefined;
+    let registrations = 0;
     let rejectedBatchStatus = 0;
     let monotonicNow = 403;
     let responseBody: BodyInit = '{"user":null}';
@@ -77,8 +82,18 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
         init?: RequestInit,
       ): Promise<Response> {
         const url = input instanceof Request ? input.url : String(input);
-        if (url === "https://example.test/api/self-healing/session") {
-          uploads.push(String(init?.body));
+        if (url === (direct ? "https://qa.replay.io/api/monitoring-register" : "https://example.test/api/self-healing/session")) {
+          let body = String(init?.body);
+          if (direct) {
+            assert.equal(init?.credentials, "omit");
+            assert.equal(new Headers(init?.headers).get("Authorization"), `Bearer ${options.publishableKey}`);
+            const data = JSON.parse(body);
+            assert.equal(data.session_url, undefined);
+            assert.equal(data.session.kind, "session");
+            if (!data.auxiliary_data) { registrations++; return new Response("", { status: 202 }); }
+            body = JSON.stringify({ session_url: `https://qa.replay.io/ui/replay/${data.session.kind}/${encodeURIComponent(data.session.id)}`, auxiliary_data: data.auxiliary_data });
+          }
+          uploads.push(body);
           if (
             rejectedBatchStatus &&
             String(init?.body).includes("/rejected-batch")
@@ -128,7 +143,8 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
     };
     const exports: {
       initCapture?: (options: {
-        orgId: string;
+        orgId?: string;
+        publishableKey?: string;
         maxNetworkCaptureBytes?: number;
         onError?: (error: Error) => void;
       }) => {
@@ -156,7 +172,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
             ? { interactionSelector: () => null }
             : name.includes("redaction")
               ? redaction
-              : transport,
+              : name.includes("managed") ? managed : transport,
       window: fakeWindow,
       URL,
       Request,
@@ -182,6 +198,8 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
         timers.set(++timerId, callback);
         return timerId;
       },
+      setInterval(callback: () => void) { interval = callback; return 1; },
+      clearInterval() { interval = undefined; },
       clearTimeout(id: number) {
         timers.delete(id);
       },
@@ -197,25 +215,25 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       assert.throws(
         () =>
           exports.initCapture!({
-            orgId: "test",
+            ...options,
             maxNetworkCaptureBytes: invalid,
           }),
         /safe integer of at least 1024 bytes/,
       );
     }
     const capture = exports.initCapture!({
-      orgId: "test",
+      ...options,
       maxNetworkCaptureBytes,
       onError: () => {},
     });
     assert.throws(
       () =>
-        exports.initCapture!({ orgId: "test", maxNetworkCaptureBytes: 1234 }),
+        exports.initCapture!({ ...options, maxNetworkCaptureBytes: 1234 }),
       /different options/,
     );
     assert.equal(
       exports.initCapture!({
-        orgId: "test",
+        ...options,
         maxNetworkCaptureBytes: maxNetworkCaptureBytes ?? 1_000_000,
       }),
       capture,
@@ -225,6 +243,12 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
     const startup = fakeWindow.fetch("https://example.test/startup/slow");
     assert.ok(releaseSlow);
     await callbacks.ready({ sessionUrl });
+    if (direct) {
+      assert.ok(interval);
+      interval();
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(registrations, 1);
+    }
     const initialBody = uploads[0]!;
     const manifest = JSON.parse(
       readFileSync(
@@ -238,7 +262,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       ).payload,
       { name: manifest.name, version: manifest.version },
     );
-    operations
+    if (!direct) operations
       .find((operation) => operation.id === "ingestSession")!
       .body!.parse(JSON.parse(initialBody));
     const initialRegistration = UploadSchema.parse(JSON.parse(uploads[0]!));
@@ -376,7 +400,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
     const slow = fakeWindow.fetch("https://example.test/slow");
     assert.ok(releaseSlow);
     // No ready callback: each producer must discover the changed SDK session itself.
-    sessionUrl = "https://app.fullstory.com/session/next";
+    sessionUrl = session("next");
     listeners.get("click")!({
       type: "click",
       isTrusted: true,
@@ -627,7 +651,7 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
     });
     await flush();
     terminalFailure = false;
-    sessionUrl = "https://app.fullstory.com/session/after-failure";
+    sessionUrl = session("after-failure");
     await callbacks.ready({ sessionUrl });
     await fakeWindow.fetch("https://example.test/fresh-budget");
     listeners.get("click")!({
@@ -674,9 +698,10 @@ for (const maxNetworkCaptureBytes of [undefined, 300_000]) {
       "unavailable SDK session must not capture into the previous session",
     );
     await capture.stop();
+    assert.equal(interval, undefined);
     assert.equal(listeners.size, 0);
     await callbacks.ready({
-      sessionUrl: "https://app.fullstory.com/session/after-stop",
+      sessionUrl: session("after-stop"),
     });
     await fakeWindow.fetch("https://example.test/after-stop");
     await flush();
