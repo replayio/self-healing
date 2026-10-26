@@ -5,6 +5,31 @@ description: Update an existing application's Self Healing capture package and i
 
 # Update Self Healing in this project
 
+## Replay QA managed capture
+
+If the user is installing or updating capture using a publishable `lqc_` key from
+an existing Replay QA project's Self Healing setup, follow this path instead of
+the account provisioning and server forwarding procedure below:
+
+1. Install `@replayio/self-healing-capture@0.1.8` and its `@fullstory/browser` peer
+   dependency using the application's package manager. Read the package's
+   `UPGRADING.md` for an existing installation.
+2. Replace the old monitoring snippet or duplicate recorder initialization with
+   `initCapture({ publishableKey: '<provided lqc_ key>' })` imported from the package.
+   Initialize before app rendering. Keep identity hooks and privacy/masking rules.
+   Use `serviceUrl` only when the supplied setup targets a QA preview HTTPS origin.
+3. Do not provision a Self Healing account, ask for a Subtext key, add a backend
+   forwarding route, or expose a server credential. Do not load `qa-monitoring-v1.js`.
+   FullStory's recorder still loads from QA `/fs.js`; allow the QA origin in CSP
+   `script-src` and `connect-src`.
+4. Follow the application's verification and deployment rules. Verify recorder
+   uploads and HTTP 202 artifact registrations on QA, then confirm the session in
+   the selected project. Report the package version and actual verification.
+
+Stop after this path. The remaining procedure is for Self Healing account-backed
+integrations using a server-side forwarding route, not managed QA capture.
+
+
 Use this skill when asked to update an existing `@replayio/self-healing-capture` installation. Update the dependency and application-owned integration together. The original installation conversation is not required. For a project without an installation, use [setup-self-healing](../setup-self-healing/SKILL.md).
 
 ## Inspect the installation and target release

@@ -1,3 +1,4 @@
+import { managedCapture } from "./managed.js";
 import { interactionSelector } from "./interaction-selector.js";
 import { redactExchange, type Redaction } from "./redaction.js";
 import { FullStory, init } from "@fullstory/browser";
@@ -8,10 +9,19 @@ import {
   type Artifact,
 } from "./transport.js";
 
-export interface CaptureOptions {
+export type CaptureOptions = ({
+  publishableKey: string;
+  /** Override only for a QA preview deployment. */
+  serviceUrl?: string;
+  orgId?: never;
+  endpoint?: never;
+} | {
   orgId: string;
   /** Same-origin POST route holding the server-side credential. */
   endpoint?: string;
+  publishableKey?: never;
+  serviceUrl?: never;
+}) & {
   /** Maximum UTF-8 JSON bytes per network exchange (bodies, headers and metadata). Defaults to 1,000,000. */
   maxNetworkCaptureBytes?: number;
   onError?: (error: Error) => void;
@@ -119,6 +129,8 @@ export function initCapture(options: CaptureOptions): CaptureController {
     );
   if (active) {
     if (
+      options.publishableKey !== activeOptions?.publishableKey ||
+      options.serviceUrl !== activeOptions?.serviceUrl ||
       options.orgId !== activeOptions?.orgId ||
       options.endpoint !== activeOptions?.endpoint ||
       maxNetworkCaptureBytes !==
@@ -129,20 +141,21 @@ export function initCapture(options: CaptureOptions): CaptureController {
     }
     return active;
   }
-  if (!options.orgId)
-    throw new Error("A FullStory organization ID is required");
-  const endpoint = new URL(
-    options.endpoint ?? "/api/self-healing/session",
-    window.location.href,
+  const nativeFetch = window.fetch.bind(window);
+  const managed = options.publishableKey !== undefined
+    ? managedCapture({ publishableKey: options.publishableKey, serviceUrl: options.serviceUrl }, nativeFetch)
+    : undefined;
+  if (managed && (options.orgId !== undefined || options.endpoint !== undefined))
+    throw new Error("Managed capture accepts a publishable key, not organization or endpoint overrides");
+  if (!managed && !options.orgId) throw new Error("A FullStory organization ID is required");
+  if (managed && maxNetworkCaptureBytes > 2_000_000)
+    throw new Error("Managed capture supports at most 2,000,000 bytes per exchange");
+  const endpoint = managed?.endpoint ?? new URL(
+    options.endpoint ?? "/api/self-healing/session", window.location.href,
   );
-  if (
-    endpoint.origin !== window.location.origin ||
-    endpoint.username ||
-    endpoint.password
-  ) {
+  if (!managed && (endpoint.origin !== window.location.origin || endpoint.username || endpoint.password))
     throw new Error("Capture endpoint must be same-origin");
-  }
-  const orgId = options.orgId;
+  const recorderOptions = managed?.recorderOptions ?? { orgId: options.orgId! };
   let stopped = false;
   let lastError: Error | undefined;
   const reportError = (error: unknown) => {
@@ -154,7 +167,6 @@ export function initCapture(options: CaptureOptions): CaptureController {
     }
   };
   const inFlight = new Set<Promise<unknown>>();
-  const nativeFetch = window.fetch.bind(window);
   const pageId = crypto.randomUUID();
   let userEmail: string | null = null;
   let fullStoryReady = false;
@@ -236,8 +248,9 @@ export function initCapture(options: CaptureOptions): CaptureController {
       try {
         const response = await nativeFetch(endpoint.href, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
+          headers: managed?.headers ?? { "Content-Type": "application/json" },
+          body: managed ? managed.encode(body) : body,
+          ...(managed ? { credentials: "omit" as const, redirect: "error" as const } : {}),
         });
         if (attempt === 2) return response;
         const busy =
@@ -284,7 +297,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         namespace: "session",
         key: "capture-producer",
         schema_version: 1,
-        payload: { name: "@replayio/self-healing-capture", version: "0.1.7" },
+        payload: { name: "@replayio/self-healing-capture", version: "0.1.8" },
       },
       ...(context !== session.queuedContext || session.pendingBatches.length > 0
         ? [
@@ -495,7 +508,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
         : new URL(String(input), window.location.href),
       init,
     );
-    if (request.url === endpoint.href) return nativeFetch(request);
+    if (request.url === endpoint.href || managed?.isTransport(request.url)) return nativeFetch(request);
     const synthetic = syntheticExchange;
     if (
       synthetic &&
@@ -582,6 +595,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     return response;
   };
 
+  let registrationTimer: ReturnType<typeof setInterval> | undefined;
   const controller: CaptureController = {
     identify: (user) => {
       if (!stopped) identifyFullStoryUser(user);
@@ -602,6 +616,7 @@ export function initCapture(options: CaptureOptions): CaptureController {
     },
     async stop() {
       stopped = true;
+      if (registrationTimer !== undefined) clearInterval(registrationTimer);
       for (const eventName of CAPTURED_SESSION_INTERACTION_EVENTS) {
         window.removeEventListener(eventName, recordInteraction, {
           capture: true,
@@ -612,7 +627,22 @@ export function initCapture(options: CaptureOptions): CaptureController {
   };
   active = controller;
   activeOptions = { ...options };
-  init({ orgId }, async ({ sessionUrl }) => {
+  if (managed) {
+    const captureWindow = window as Window & {
+      _fs_request?: typeof managed.transport.request;
+      _fs_beacon?: typeof managed.transport.beacon;
+    };
+    captureWindow._fs_request = managed.transport.request;
+    captureWindow._fs_beacon = managed.transport.beacon;
+    registrationTimer = setInterval(() => {
+      if (stopped) return;
+      const session = captureSession();
+      if (session?.sessionUrl) void managed.register(session.sessionUrl).catch(error => {
+        (options.onError ?? console.error)(error);
+      });
+    }, 15_000);
+  }
+  init(recorderOptions, async ({ sessionUrl }) => {
     if (stopped && currentSession.sessionUrl !== null) return;
     const session = synchronizeSession(sessionUrl);
     const firstStart = !fullStoryReady;
