@@ -365,7 +365,10 @@ test("OpenAPI describes every operation, implementation status, authentication, 
         "application/json"
       ].schema,
     );
-    assert.equal(!!documented.responses["501"], !operation.implemented);
+    assert.ok(
+      documented.responses["501"],
+      "unsupported account adapters are explicit even on implemented routes",
+    );
     if (operation.body)
       assert.ok(documented.requestBody.content["application/json"].schema);
   }

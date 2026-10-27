@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { qaClient } from "./qa.ts";
+import type { QAClient } from "./qa.ts";
 
 export const REVIEW_QUIET_MINUTES = 15;
 const SavedSettings = z.object({ ok: z.literal(true) });
@@ -7,7 +7,7 @@ const SavedSettings = z.object({ ok: z.literal(true) });
 // QA's existing scheduler checks upload inactivity every 15 minutes. Reapplying enabled
 // settings preserves its activation window; do not disable/re-enable to reconcile setup.
 export async function enableSessionReviews(
-  qa: ReturnType<typeof qaClient>,
+  qa: QAClient,
   projectId: string,
   preserveExisting = false,
 ) {

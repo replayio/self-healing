@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { HttpError } from "./errors.ts";
-import { QARequestError, type qaClient } from "./qa.ts";
+import { QARequestError, type QAClient } from "./qa.ts";
 
 type Component = {
   name: string;
@@ -64,7 +64,7 @@ function selectors(value: string): string[] {
 }
 
 export async function sessionSightmap(
-  qa: ReturnType<typeof qaClient>,
+  qa: QAClient,
   projectId: string,
 ) {
   let value: unknown;
