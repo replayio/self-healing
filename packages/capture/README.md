@@ -5,8 +5,8 @@ network exchanges, interactions, identity, metrics, and session context.
 
 ## Direct capture for a Replay QA project
 
-With a publishable `lqc_` key from the project's Self Healing setup, install version
-0.1.8 or later and the `@fullstory/browser` peer dependency, then initialize once
+With a publishable `lqc_` key from the project's Self Healing setup, install the latest stable
+published release (`@replayio/self-healing-capture@latest`) and the `@fullstory/browser` peer dependency, then initialize once
 before rendering the application:
 
 ```ts

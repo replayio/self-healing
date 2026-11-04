@@ -11,9 +11,14 @@ If the user is installing or updating capture using a publishable `lqc_` key fro
 an existing Replay QA project's Self Healing setup, follow this path instead of
 the account provisioning and server forwarding procedure below:
 
-1. Install `@replayio/self-healing-capture@0.1.8` and its `@fullstory/browser` peer
-   dependency using the application's package manager. Read the package's
-   `UPGRADING.md` for an existing installation.
+1. Resolve the latest stable published release with
+   `@replayio/self-healing-capture@latest`, unless the user requested a specific
+   target version. Install that release and its `@fullstory/browser` peer dependency
+   using the application's package manager, and retain the resolved version in the
+   lockfile. For an existing installation, read the target release's bundled
+   `UPGRADING.md` and apply its migrations before changing application code. Do not
+   use a version copied from an older setup prompt or assume the service deployment
+   and npm release are synchronized.
 2. Replace the old monitoring snippet or duplicate recorder initialization with
    `initCapture({ publishableKey: '<provided lqc_ key>' })` imported from the package.
    Initialize before app rendering. Keep identity hooks and privacy/masking rules.
